@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #f1f3f7;
+    color: #161922;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
+    background-image: 
+      radial-gradient(#d5dae5 1px, transparent 1px),
+      linear-gradient(to right, rgba(215, 220, 230, 0.3) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(215, 220, 230, 0.3) 1px, transparent 1px);
+    background-size: 24px 24px, 96px 96px, 96px 96px;
+    background-position: 0 0, 0 0, 0 0;
+    min-height: 100vh;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* 战术切角与直角工程卡片 */
+.tactical-border {
+  border: 1px solid #dce1eb;
+  background: #ffffff;
+  position: relative;
+}
+
+/* 战术十字刻度 */
+.tactical-crosshair {
+  position: relative;
+}
+.tactical-crosshair::before,
+.tactical-crosshair::after {
+  content: '';
+  position: absolute;
+  background: #b0b9c8;
+}
+
+/* 隐藏滚动条 */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 密码输入等宽与防窥间隔 */
+input[type="password"] {
+  letter-spacing: 0.2em;
+}

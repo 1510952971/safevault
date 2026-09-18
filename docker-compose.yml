@@ -1,0 +1,13 @@
+services:
+  safevault:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: safevault:latest
+    container_name: safevault-nas
+    restart: unless-stopped
+    ports:
+      # NAS 外部映射端口 : 容器内部端口 (可根据需要在 NAS 上调整如 8088:80)
+      - "8088:80"
+    environment:
+      - TZ=Asia/Shanghai
