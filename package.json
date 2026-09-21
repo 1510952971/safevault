@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/test-crypto.js",
+    "test": "node tests/test-crypto.js && node tests/test-audit-totp.js",
     "docs:build": "python docs/generate_design_doc.py"
   },
   "dependencies": {

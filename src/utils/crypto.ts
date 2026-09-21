@@ -156,7 +156,8 @@ export async function encryptVaultItem(
     const payload: EncryptedPayload = {
       username: item.username,
       password: item.password,
-      notes: item.notes || ''
+      notes: item.notes || '',
+      totpSecret: item.totpSecret || ''
     };
 
     const payloadBytes = textEncoder.encode(JSON.stringify(payload));
@@ -175,6 +176,8 @@ export async function encryptVaultItem(
       title: item.title,
       category: item.category,
       website: item.website || '',
+      isFavorite: !!item.isFavorite,
+      tags: item.tags || [],
       encryptedPayload: bufferToBase64(new Uint8Array(cipherBuffer)),
       iv: bufferToBase64(iv),
       createdAt: now,
@@ -211,9 +214,12 @@ export async function decryptVaultItem(
       title: encryptedItem.title,
       category: encryptedItem.category,
       website: encryptedItem.website,
+      isFavorite: encryptedItem.isFavorite || false,
+      tags: encryptedItem.tags || [],
       username: payload.username,
       password: payload.password,
       notes: payload.notes,
+      totpSecret: payload.totpSecret,
       createdAt: encryptedItem.createdAt,
       updatedAt: encryptedItem.updatedAt
     };

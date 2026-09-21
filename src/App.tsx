@@ -190,6 +190,31 @@ export const App: React.FC = () => {
     addToast('info', `已删除 [${title}]`);
   };
 
+  // 6.5 切换置顶状态
+  const handleToggleFavorite = async (id: string) => {
+    if (!masterKey) return;
+    const target = items.find((i) => i.id === id);
+    if (!target) return;
+
+    const newFavoriteState = !target.isFavorite;
+    const updatedDecrypted: DecryptedVaultItem = {
+      ...target,
+      isFavorite: newFavoriteState
+    };
+
+    // 加密并更新存储
+    const encryptedItem = await encryptVaultItem(masterKey, updatedDecrypted, id);
+    const storedItems = loadStoredEncryptedItems();
+    const updatedEncryptedItems = storedItems.map((i) => (i.id === id ? encryptedItem : i));
+    saveStoredEncryptedItems(updatedEncryptedItems);
+
+    setItems((prev) => prev.map((i) => (i.id === id ? updatedDecrypted : i)));
+    addToast(
+      'success',
+      newFavoriteState ? `已将 [${target.title}] 设为核心置顶` : `已取消 [${target.title}] 的核心置顶`
+    );
+  };
+
   // 7. 复制账号
   const handleCopyUsername = async (username: string) => {
     const success = await secureCopyToClipboard(username, 60);
@@ -210,6 +235,16 @@ export const App: React.FC = () => {
     }
   };
 
+  // 8.5 复制 TOTP 动态码
+  const handleCopyTotp = async (code: string) => {
+    const success = await secureCopyToClipboard(code, 60);
+    if (success) {
+      addToast('success', '2FA 动态验证码已复制到剪贴板');
+    } else {
+      addToast('error', '复制验证码失败');
+    }
+  };
+
   // 9. 导入备份成功处理
   const handleRestoreSuccess = (backup: VaultBackupFile) => {
     saveStoredVaultMeta(backup.meta);
@@ -221,7 +256,46 @@ export const App: React.FC = () => {
     addToast('success', `成功导入备份！共载入 ${backup.items.length} 条密文凭据，请输入主密码解锁`);
   };
 
-  // 10. 重置金库处理
+  // 10. 批量导入 CSV
+  const handleBatchImportCsv = async (
+    importedList: Array<Omit<DecryptedVaultItem, 'id' | 'createdAt' | 'updatedAt'>>
+  ) => {
+    if (!masterKey) {
+      addToast('error', '金库未解锁，无法执行批量加密入库');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const storedItems = loadStoredEncryptedItems();
+      const newEncryptedItems: EncryptedVaultItem[] = [];
+      const newDecryptedItems: DecryptedVaultItem[] = [];
+
+      for (const itemData of importedList) {
+        const encrypted = await encryptVaultItem(masterKey, itemData);
+        newEncryptedItems.push(encrypted);
+        newDecryptedItems.push({
+          ...itemData,
+          id: encrypted.id,
+          createdAt: encrypted.createdAt,
+          updatedAt: encrypted.updatedAt
+        });
+      }
+
+      const allEncrypted = [...newEncryptedItems, ...storedItems];
+      saveStoredEncryptedItems(allEncrypted);
+      setItems((prev) => [...newDecryptedItems, ...prev]);
+
+      addToast('success', `成功加密导入 ${newEncryptedItems.length} 条密码凭据！`);
+    } catch (err) {
+      console.error('批量导入异常:', err);
+      addToast('error', '批量导入发生异常');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 11. 重置金库处理
   const handleResetVault = () => {
     resetEntireVault();
     setVaultMeta(null);
@@ -267,8 +341,10 @@ export const App: React.FC = () => {
               setIsPasswordModalOpen(true);
             }}
             onDeleteItem={handleDeleteItem}
+            onToggleFavorite={handleToggleFavorite}
             onCopyUsername={handleCopyUsername}
             onCopyPassword={handleCopyPassword}
+            onCopyTotp={handleCopyTotp}
             onOpenGenerator={() => setIsGeneratorModalOpen(true)}
             onOpenBackup={() => setIsBackupModalOpen(true)}
           />
@@ -293,11 +369,13 @@ export const App: React.FC = () => {
         onCopyPassword={handleCopyPassword}
       />
 
-      {/* 备份与恢复弹窗 */}
+      {/* 备份与恢复弹窗 (支持 JSON 与 CSV 批量导入/导出) */}
       <BackupRestoreModal
         isOpen={isBackupModalOpen}
+        items={items}
         onClose={() => setIsBackupModalOpen(false)}
         onRestoreSuccess={handleRestoreSuccess}
+        onBatchImportCsv={handleBatchImportCsv}
         onResetVaultConfirm={handleResetVault}
       />
 

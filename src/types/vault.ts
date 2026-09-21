@@ -28,6 +28,7 @@ export interface EncryptedPayload {
   username: string;
   password: string;
   notes?: string;
+  totpSecret?: string;         // TOTP 2FA 密钥 (加密存放)
 }
 
 export interface EncryptedVaultItem {
@@ -35,6 +36,8 @@ export interface EncryptedVaultItem {
   title: string;               // 平台/应用名称 (明文索引)
   category: CategoryType;      // 分类
   website?: string;            // 网站登录链接 (可选)
+  isFavorite?: boolean;        // 是否核心置顶凭据
+  tags?: string[];             // 标签
   encryptedPayload: string;    // Base64: 经 AES-GCM-256 加密后的 EncryptedPayload JSON
   iv: string;                  // Base64: 每次加密生成的 12 字节随机 IV
   createdAt: string;           // ISO 8601
@@ -49,9 +52,23 @@ export interface DecryptedVaultItem {
   password: string;
   website?: string;
   notes?: string;
+  totpSecret?: string;         // TOTP 2FA 密钥
+  isFavorite?: boolean;        // 是否核心置顶凭据
+  tags?: string[];
   createdAt: string;
   updatedAt: string;
 }
+
+export interface VaultSecurityAudit {
+  totalItems: number;
+  favoriteCount: number;
+  weakCount: number;
+  reusedCount: number;
+  healthScore: number;
+  riskyItemIds: string[];
+}
+
+export type SortOption = 'updated_desc' | 'title_asc' | 'strength_asc' | 'favorites_first';
 
 export interface VaultBackupFile {
   app: 'SafeVault';

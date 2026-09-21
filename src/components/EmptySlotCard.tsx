@@ -25,12 +25,12 @@ export const EmptySlotCard: React.FC<EmptySlotCardProps> = ({
         <Plus className="w-6 h-6" />
       </div>
 
-      {/* 标题与副标 (对齐：空槽位 / 选择设施进行建造) */}
+      {/* 标题与副标 */}
       <h4 className="font-bold text-sm text-slate-800 group-hover:text-slate-950 transition-colors">
-        空槽位
+        空置凭据槽位
       </h4>
       <p className="text-xs text-slate-400 mt-0.5">
-        选择凭据进行录入
+        点击录入新账号与密码
       </p>
 
       {/* 战术右下角折角标记 ┘ */}

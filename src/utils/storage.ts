@@ -195,3 +195,151 @@ export async function secureCopyToClipboard(
     return false;
   }
 }
+
+/**
+ * 简易 CSV 行解析（支持双引号包裹、逗号转义）
+ */
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentVal = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentVal += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentVal.trim());
+      currentVal = '';
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') {
+        i++;
+      }
+      currentRow.push(currentVal.trim());
+      if (currentRow.some((val) => val.length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentVal = '';
+    } else {
+      currentVal += char;
+    }
+  }
+
+  if (currentVal || currentRow.length > 0) {
+    currentRow.push(currentVal.trim());
+    if (currentRow.some((val) => val.length > 0)) {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows;
+}
+
+/**
+ * 解析 Chrome / Edge / Bitwarden / 通用密码 CSV 格式
+ */
+export function parseCsvPasswords(
+  csvContent: string
+): Array<Omit<DecryptedVaultItem, 'id' | 'createdAt' | 'updatedAt'>> {
+  const rows = parseCsvRows(csvContent);
+  if (rows.length < 2) {
+    throw new Error('CSV 文件无有效内容或缺少表头');
+  }
+
+  const header = rows[0].map((col) => col.toLowerCase().replace(/[\s_-]/g, ''));
+
+  // 字段索引定位
+  let titleIdx = header.findIndex((h) => h.includes('name') || h.includes('title') || h.includes('名称'));
+  let urlIdx = header.findIndex((h) => h.includes('url') || h.includes('website') || h.includes('网址'));
+  let usernameIdx = header.findIndex((h) => h.includes('user') || h.includes('login') || h.includes('account') || h.includes('账号'));
+  let passwordIdx = header.findIndex((h) => h.includes('password') || h.includes('code') || h.includes('pwd') || h.includes('密码'));
+  let notesIdx = header.findIndex((h) => h.includes('note') || h.includes('comment') || h.includes('备注'));
+
+  // 智能 fallback
+  if (titleIdx === -1 && urlIdx !== -1) titleIdx = urlIdx;
+  if (titleIdx === -1) titleIdx = 0;
+  if (usernameIdx === -1 && rows[0].length > 1) usernameIdx = 1;
+  if (passwordIdx === -1 && rows[0].length > 2) passwordIdx = 2;
+
+  const results: Array<Omit<DecryptedVaultItem, 'id' | 'createdAt' | 'updatedAt'>> = [];
+
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    const password = passwordIdx !== -1 ? row[passwordIdx] || '' : '';
+    if (!password) continue; // 跳过空密码
+
+    let title = titleIdx !== -1 ? row[titleIdx] || '' : '';
+    const url = urlIdx !== -1 ? row[urlIdx] || '' : '';
+    const username = usernameIdx !== -1 ? row[usernameIdx] || '' : '';
+    const notes = notesIdx !== -1 ? row[notesIdx] || '' : '';
+
+    if (!title && url) {
+      try {
+        title = new URL(url).hostname;
+      } catch {
+        title = url;
+      }
+    }
+    if (!title) title = `导入凭据-${r}`;
+
+    results.push({
+      title,
+      category: 'website',
+      username,
+      password,
+      website: url,
+      notes,
+      isFavorite: false
+    });
+  }
+
+  return results;
+}
+
+/**
+ * 导出明文 CSV 文件 (带 UTF-8 BOM，方便 Excel/WPS 打开)
+ */
+export function exportVaultAsCsv(items: DecryptedVaultItem[]): void {
+  const header = ['名称', '网址', '账号', '密码', '分类', '备注', '是否置顶'];
+  const escapeCsv = (str: string | undefined) => {
+    if (!str) return '""';
+    return `"${str.replace(/"/g, '""')}"`;
+  };
+
+  const lines = [
+    header.join(','),
+    ...items.map((item) =>
+      [
+        escapeCsv(item.title),
+        escapeCsv(item.website),
+        escapeCsv(item.username),
+        escapeCsv(item.password),
+        escapeCsv(item.category),
+        escapeCsv(item.notes),
+        item.isFavorite ? '"是"' : '"否"'
+      ].join(',')
+    )
+  ];
+
+  const csvContent = '\uFEFF' + lines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `SafeVault_Passwords_${dateStr}.csv`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}

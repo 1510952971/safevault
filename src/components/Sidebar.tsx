@@ -1,6 +1,8 @@
 import React from 'react';
 import {
   Layers,
+  Star,
+  AlertTriangle,
   Globe,
   Briefcase,
   CreditCard,
@@ -14,6 +16,8 @@ import { CATEGORIES } from '../utils/storage';
 interface SidebarProps {
   selectedCategory: string;
   onSelectCategory: (cat: string) => void;
+  favoritesCount?: number;
+  riskyCount?: number;
 }
 
 const CATEGORY_ICON_MAP: Record<CategoryType, React.ReactNode> = {
@@ -27,14 +31,16 @@ const CATEGORY_ICON_MAP: Record<CategoryType, React.ReactNode> = {
 
 export const Sidebar: React.FC<SidebarProps> = ({
   selectedCategory,
-  onSelectCategory
+  onSelectCategory,
+  favoritesCount = 0,
+  riskyCount = 0
 }) => {
   return (
-    <aside className="w-full lg:w-48 shrink-0 bg-white border border-slate-200 rounded-lg overflow-hidden shadow-tactical-sm">
+    <aside className="w-full lg:w-52 shrink-0 bg-white border border-slate-200 rounded-lg overflow-hidden shadow-tactical-sm">
       {/* 顶部标题区 */}
       <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-        <span className="font-mono text-xs font-bold text-slate-700 tracking-wider">CATEGORIES</span>
-        <span className="text-[10px] font-mono text-slate-400">#INDEX</span>
+        <span className="font-mono text-xs font-bold text-slate-700 tracking-wider">INDEX // 分类索引</span>
+        <span className="text-[10px] font-mono text-slate-400">#0027</span>
       </div>
 
       {/* 竖向战术菜单项 */}
@@ -42,7 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* 全部凭据 00 */}
         <button
           onClick={() => onSelectCategory('all')}
-          className={`w-full text-left px-3.5 py-3 transition-all flex items-center justify-between group whitespace-nowrap lg:whitespace-normal shrink-0 ${
+          className={`w-full text-left px-3.5 py-2.5 transition-all flex items-center justify-between group whitespace-nowrap lg:whitespace-normal shrink-0 ${
             selectedCategory === 'all'
               ? 'bg-[#161922] text-white font-semibold'
               : 'bg-white hover:bg-slate-50 text-slate-600'
@@ -66,6 +72,66 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </span>
         </button>
 
+        {/* 核心置顶凭据 */}
+        <button
+          onClick={() => onSelectCategory('favorites')}
+          className={`w-full text-left px-3.5 py-2.5 transition-all flex items-center justify-between group whitespace-nowrap lg:whitespace-normal shrink-0 ${
+            selectedCategory === 'favorites'
+              ? 'bg-[#161922] text-white font-semibold'
+              : 'bg-white hover:bg-slate-50 text-slate-600'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <span
+              className={`w-1 h-3.5 rounded-full ${
+                selectedCategory === 'favorites' ? 'bg-brand-lime' : 'bg-transparent'
+              }`}
+            />
+            <Star className="w-4 h-4 shrink-0 text-amber-500 fill-amber-500" />
+            <span className="text-xs font-medium">核心置顶</span>
+          </div>
+          <span
+            className={`font-mono text-[11px] ml-2 px-1.5 py-0.2 rounded ${
+              selectedCategory === 'favorites'
+                ? 'text-brand-lime font-bold'
+                : 'text-amber-600 bg-amber-50 font-bold'
+            }`}
+          >
+            {favoritesCount}
+          </span>
+        </button>
+
+        {/* 风险审计预警 */}
+        <button
+          onClick={() => onSelectCategory('risky')}
+          className={`w-full text-left px-3.5 py-2.5 transition-all flex items-center justify-between group whitespace-nowrap lg:whitespace-normal shrink-0 ${
+            selectedCategory === 'risky'
+              ? 'bg-[#161922] text-white font-semibold'
+              : 'bg-white hover:bg-slate-50 text-slate-600'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <span
+              className={`w-1 h-3.5 rounded-full ${
+                selectedCategory === 'risky' ? 'bg-brand-lime' : 'bg-transparent'
+              }`}
+            />
+            <AlertTriangle className={`w-4 h-4 shrink-0 ${riskyCount > 0 ? 'text-rose-500' : 'text-slate-400'}`} />
+            <span className="text-xs font-medium">风险审计</span>
+          </div>
+          <span
+            className={`font-mono text-[11px] ml-2 px-1.5 py-0.2 rounded font-bold ${
+              selectedCategory === 'risky'
+                ? 'text-brand-lime'
+                : riskyCount > 0
+                ? 'text-rose-600 bg-rose-50'
+                : 'text-slate-400'
+            }`}
+          >
+            {riskyCount}
+          </span>
+        </button>
+
         {/* 各细分战术分类 01 ~ 06 */}
         {CATEGORIES.map((cat) => {
           const isSelected = selectedCategory === cat.key;
@@ -73,7 +139,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={cat.key}
               onClick={() => onSelectCategory(cat.key)}
-              className={`w-full text-left px-3.5 py-3 transition-all flex items-center justify-between group whitespace-nowrap lg:whitespace-normal shrink-0 ${
+              className={`w-full text-left px-3.5 py-2.5 transition-all flex items-center justify-between group whitespace-nowrap lg:whitespace-normal shrink-0 ${
                 isSelected
                   ? 'bg-[#161922] text-white font-semibold'
                   : 'bg-white hover:bg-slate-50 text-slate-600'
