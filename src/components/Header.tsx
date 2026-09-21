@@ -1,9 +1,12 @@
 import React from 'react';
-import { ShieldCheck, Lock, Sparkles, DownloadCloud, Terminal } from 'lucide-react';
+import { ShieldCheck, Lock, Sparkles, DownloadCloud, Terminal, Clock } from 'lucide-react';
 
 interface HeaderProps {
   isLocked: boolean;
   totalItems: number;
+  remainingLockSeconds: number;
+  lockTimeoutMinutes: number;
+  onChangeLockTimeout: (mins: number) => void;
   onLockNow: () => void;
   onOpenGenerator: () => void;
   onOpenBackup: () => void;
@@ -12,10 +15,19 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   isLocked,
   totalItems,
+  remainingLockSeconds,
+  lockTimeoutMinutes,
+  onChangeLockTimeout,
   onLockNow,
   onOpenGenerator,
   onOpenBackup
 }) => {
+  const formatTimer = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+    const secs = (totalSeconds % 60).toString().padStart(2, '0');
+    return `${mins}:${secs}`;
+  };
+
   return (
     <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200 px-4 sm:px-8 py-3 transition-all shadow-sm">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
@@ -53,6 +65,27 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>ITEMS: {totalItems}</span>
               </div>
 
+              {/* 超时自动锁屏倒计时与配置 */}
+              <div
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200/80 border border-slate-200 text-xs font-mono text-slate-700 transition-colors"
+                title="自动锁屏实时倒计时，点击可修改锁屏时长"
+              >
+                <Clock className="w-3.5 h-3.5 text-slate-500" />
+                <span className="font-bold text-slate-900">{formatTimer(remainingLockSeconds)}</span>
+                <span className="text-slate-300">/</span>
+                <select
+                  value={lockTimeoutMinutes}
+                  onChange={(e) => onChangeLockTimeout(Number(e.target.value))}
+                  className="bg-transparent text-xs font-mono text-slate-700 font-semibold cursor-pointer focus:outline-none"
+                >
+                  <option value={1}>1分钟 (快速测试)</option>
+                  <option value={3}>3分钟 (默认)</option>
+                  <option value={5}>5分钟</option>
+                  <option value={15}>15分钟</option>
+                  <option value={30}>30分钟</option>
+                </select>
+              </div>
+
               {/* 强密码发生器 */}
               <button
                 onClick={onOpenGenerator}
@@ -73,11 +106,11 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="hidden sm:inline">密文备份</span>
               </button>
 
-              {/* 锁定终端 */}
+              {/* 立即锁定终端 */}
               <button
                 onClick={onLockNow}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-sm transition-all"
-                title="锁定当前终端"
+                title="立即锁定当前终端"
               >
                 <Lock className="w-3 h-3 text-brand-lime" />
                 <span>锁定终端</span>

@@ -4,6 +4,9 @@ import { Clock, Cpu, AlertTriangle, ShieldCheck, CopyCheck } from 'lucide-react'
 interface TacticalDefensePanelProps {
   weakCount: number;
   reusedCount: number;
+  remainingLockSeconds: number;
+  lockTimeoutMinutes: number;
+  onChangeLockTimeout: (mins: number) => void;
   onOpenGenerator: () => void;
   onOpenBackup: () => void;
   onFilterRisky: () => void;
@@ -12,11 +15,20 @@ interface TacticalDefensePanelProps {
 export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
   weakCount,
   reusedCount,
+  remainingLockSeconds,
+  lockTimeoutMinutes,
+  onChangeLockTimeout,
   onOpenGenerator,
   onOpenBackup,
   onFilterRisky
 }) => {
   const hasRisk = weakCount > 0 || reusedCount > 0;
+
+  const formatTimer = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+    const secs = (totalSeconds % 60).toString().padStart(2, '0');
+    return `${mins}:${secs}`;
+  };
 
   return (
     <aside className="w-full lg:w-72 shrink-0 space-y-4">
@@ -29,13 +41,30 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
 
         {/* 核心安全指标列表 */}
         <div className="space-y-3 divide-y divide-slate-100 text-xs">
-          {/* 超时自动锁屏 */}
+          {/* 超时自动锁屏 (实时倒计时与可配置) */}
           <div className="flex items-center justify-between pt-1">
             <div className="flex items-center gap-2 text-slate-600">
               <Clock className="w-4 h-4 text-slate-400" />
               <span>超时自动锁屏</span>
             </div>
-            <span className="font-mono font-bold text-slate-800">03:00 / 03:00</span>
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono font-bold text-slate-800">
+                {formatTimer(remainingLockSeconds)}
+              </span>
+              <span className="text-slate-300">/</span>
+              <select
+                value={lockTimeoutMinutes}
+                onChange={(e) => onChangeLockTimeout(Number(e.target.value))}
+                className="bg-slate-50 border border-slate-200 rounded px-1 py-0.5 font-mono text-[11px] text-slate-700 focus:outline-none cursor-pointer"
+                title="选择无操作自动锁屏时长"
+              >
+                <option value={1}>1分钟 (测试)</option>
+                <option value={3}>3分钟 (推荐)</option>
+                <option value={5}>5分钟</option>
+                <option value={15}>15分钟</option>
+                <option value={30}>30分钟</option>
+              </select>
+            </div>
           </div>
 
           {/* PBKDF2 算力拉伸 */}

@@ -63,6 +63,9 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  // 锁屏实时倒计时秒数
+  const [remainingLockSeconds, setRemainingLockSeconds] = useState<number>(180);
+
   // 锁定金库 (清除内存密钥与明文条目)
   const handleLockNow = useCallback(() => {
     setMasterKey(null);
@@ -74,14 +77,16 @@ export const App: React.FC = () => {
     addToast('info', '保险箱已安全锁定');
   }, []);
 
-  // 2. 超时无操作自动锁定机制 (默认 3 分钟)
+  // 2. 超时无操作自动锁定机制 (支持实时每秒倒计时与自定义时长)
   const lastActivityRef = useRef<number>(Date.now());
 
   useEffect(() => {
     if (isLocked || !masterKey) return;
 
     const timeoutMinutes = vaultMeta?.lockTimeoutMinutes || 3;
-    const timeoutMs = timeoutMinutes * 60 * 1000;
+    const timeoutSeconds = timeoutMinutes * 60;
+    lastActivityRef.current = Date.now();
+    setRemainingLockSeconds(timeoutSeconds);
 
     const updateActivity = () => {
       lastActivityRef.current = Date.now();
@@ -91,17 +96,36 @@ export const App: React.FC = () => {
     events.forEach((ev) => window.addEventListener(ev, updateActivity, { passive: true }));
 
     const checkInterval = setInterval(() => {
-      if (Date.now() - lastActivityRef.current >= timeoutMs) {
+      const elapsedSeconds = Math.floor((Date.now() - lastActivityRef.current) / 1000);
+      const remaining = Math.max(0, timeoutSeconds - elapsedSeconds);
+      setRemainingLockSeconds(remaining);
+
+      if (remaining <= 0) {
         handleLockNow();
-        addToast('warning', `长时间无操作，保险箱已自动锁定`);
+        addToast('warning', `长时间无操作（已满 ${timeoutMinutes} 分钟），保险箱已自动锁定保护`);
       }
-    }, 10000);
+    }, 1000);
 
     return () => {
       events.forEach((ev) => window.removeEventListener(ev, updateActivity));
       clearInterval(checkInterval);
     };
-  }, [isLocked, masterKey, vaultMeta, handleLockNow]);
+  }, [isLocked, masterKey, vaultMeta?.lockTimeoutMinutes, handleLockNow]);
+
+  // 修改自动锁屏时长设置
+  const handleChangeLockTimeout = (minutes: number) => {
+    if (!vaultMeta) return;
+    const updatedMeta: VaultMeta = {
+      ...vaultMeta,
+      lockTimeoutMinutes: minutes,
+      updatedAt: new Date().toISOString()
+    };
+    saveStoredVaultMeta(updatedMeta);
+    setVaultMeta(updatedMeta);
+    lastActivityRef.current = Date.now();
+    setRemainingLockSeconds(minutes * 60);
+    addToast('info', `已将自动锁屏时长设置为 ${minutes} 分钟`);
+  };
 
   // 3. 首次创建主密码初始化
   const handleInitialize = async (masterPassword: string) => {
@@ -311,6 +335,9 @@ export const App: React.FC = () => {
       <Header
         isLocked={isLocked}
         totalItems={items.length}
+        remainingLockSeconds={remainingLockSeconds}
+        lockTimeoutMinutes={vaultMeta?.lockTimeoutMinutes || 3}
+        onChangeLockTimeout={handleChangeLockTimeout}
         onLockNow={handleLockNow}
         onOpenGenerator={() => setIsGeneratorModalOpen(true)}
         onOpenBackup={() => setIsBackupModalOpen(true)}
@@ -332,6 +359,9 @@ export const App: React.FC = () => {
           <VaultList
             items={items}
             isLoading={isLoading}
+            remainingLockSeconds={remainingLockSeconds}
+            lockTimeoutMinutes={vaultMeta?.lockTimeoutMinutes || 3}
+            onChangeLockTimeout={handleChangeLockTimeout}
             onAddNew={() => {
               setEditingItem(null);
               setIsPasswordModalOpen(true);

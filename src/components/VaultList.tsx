@@ -12,6 +12,9 @@ import { calculatePasswordStrength } from '../utils/crypto';
 interface VaultListProps {
   items: DecryptedVaultItem[];
   isLoading: boolean;
+  remainingLockSeconds: number;
+  lockTimeoutMinutes: number;
+  onChangeLockTimeout: (mins: number) => void;
   onAddNew: () => void;
   onEditItem: (item: DecryptedVaultItem) => void;
   onDeleteItem: (id: string, title: string) => void;
@@ -26,6 +29,9 @@ interface VaultListProps {
 export const VaultList: React.FC<VaultListProps> = ({
   items,
   isLoading,
+  remainingLockSeconds,
+  lockTimeoutMinutes,
+  onChangeLockTimeout,
   onAddNew,
   onEditItem,
   onDeleteItem,
@@ -298,6 +304,9 @@ export const VaultList: React.FC<VaultListProps> = ({
       <TacticalDefensePanel
         weakCount={audit.weakCount}
         reusedCount={audit.reusedCount}
+        remainingLockSeconds={remainingLockSeconds}
+        lockTimeoutMinutes={lockTimeoutMinutes}
+        onChangeLockTimeout={onChangeLockTimeout}
         onOpenGenerator={onOpenGenerator}
         onOpenBackup={onOpenBackup}
         onFilterRisky={() => setSelectedCategory('risky')}
