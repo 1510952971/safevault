@@ -201,9 +201,10 @@ const server = http.createServer(async (req, res) => {
   if (pathname.startsWith('/api/')) {
     try {
       // 1. 服务健康与版本
-      if (pathname === '/api/version' && req.method === 'GET') {
+      if ((pathname === '/api/version' || pathname === '/api/health') && req.method === 'GET') {
         return sendJson(res, 200, {
           success: true,
+          status: 'healthy',
           name: 'SafeVault NAS Sync Server',
           version: SERVER_VERSION,
           userCount: Object.keys(db.users).length,
