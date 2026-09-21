@@ -20,9 +20,6 @@ export const VaultOverview: React.FC<VaultOverviewProps> = ({
   searchQuery,
   onSearchChange
 }) => {
-  const maxCapacity = Math.max(totalItems, 20);
-  const percentage = Math.min(100, Math.max(5, (totalItems / maxCapacity) * 100));
-
   return (
     <div className="relative bg-white border border-slate-200 rounded-lg p-5 shadow-tactical-sm overflow-hidden">
       {/* 背景战术雷达弧线与工程编号装饰 */}
@@ -67,22 +64,27 @@ export const VaultOverview: React.FC<VaultOverviewProps> = ({
         {/* 已收录凭据量 */}
         <div>
           <span className="text-xs font-mono text-slate-400 block mb-1">
-            已收录密码凭据 // TOTAL CAPACITY
+            已收录密码凭据 // TOTAL CREDENTIALS
           </span>
-          <div className="flex items-baseline gap-1.5">
+          <div className="flex items-baseline gap-2">
             <span className="text-4xl sm:text-5xl font-extrabold font-mono text-slate-900 tracking-tight">
               {totalItems}
             </span>
-            <span className="text-xl sm:text-2xl font-mono text-slate-400">
-              / {maxCapacity}
+            <span className="text-sm font-mono text-slate-400 flex items-center gap-1.5">
+              项
+              <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                无上限 · 自由扩容
+              </span>
             </span>
           </div>
-          {/* 战术横向进度刻度条 */}
-          <div className="relative w-full h-1.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
-            <div
-              className="h-full bg-[#161922] transition-all duration-500 rounded-full"
-              style={{ width: `${percentage}%` }}
-            />
+          {/* 战术横向状态指示条 */}
+          <div className="flex items-center gap-2 mt-2">
+            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-full bg-slate-800 rounded-full w-full" />
+            </div>
+            <span className="text-[10px] font-mono text-slate-400">
+              本地高密存储 (∞)
+            </span>
           </div>
         </div>
 
