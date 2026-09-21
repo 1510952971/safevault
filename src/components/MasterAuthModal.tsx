@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Lock, KeyRound, Eye, EyeOff, AlertTriangle, RefreshCw, UploadCloud, ShieldAlert } from 'lucide-react';
+import { Shield, Lock, KeyRound, Eye, EyeOff, AlertTriangle, RefreshCw, UploadCloud, ShieldAlert, Server, Cloud } from 'lucide-react';
 import { calculatePasswordStrength } from '../utils/crypto';
 import { SafeVaultLogo } from './SafeVaultLogo';
 
@@ -9,6 +9,7 @@ interface MasterAuthModalProps {
   onUnlock: (password: string) => Promise<boolean>;
   onOpenRestore: () => void;
   onResetVault: () => void;
+  onLoadFromNas?: (serverUrl: string, username: string, masterPassword: string) => Promise<boolean>;
 }
 
 const RATE_LIMIT_STORAGE_KEY = 'safevault_auth_ratelimit_v1';
@@ -49,13 +50,55 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
   onInitialize,
   onUnlock,
   onOpenRestore,
-  onResetVault
+  onResetVault,
+  onLoadFromNas
 }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // 极空间接入模式状态 (默认推荐从极空间载入，特别适合远程域名变动或新环境)
+  const [initMode, setInitMode] = useState<'nas' | 'create'>('nas');
+  const [nasUrl, setNasUrl] = useState(() => {
+    if (typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
+      return window.location.origin;
+    }
+    return 'http://192.168.1.100:8088';
+  });
+  const [nasUser, setNasUser] = useState('');
+  const [nasPassword, setNasPassword] = useState('');
+
+  const handleNasSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onLoadFromNas) return;
+    setErrorMsg('');
+    if (!nasUrl.trim()) {
+      setErrorMsg('请填写极空间 NAS 访问网址');
+      return;
+    }
+    if (!nasUser.trim()) {
+      setErrorMsg('请填写同步账号');
+      return;
+    }
+    if (!nasPassword) {
+      setErrorMsg('请填写主密码');
+      return;
+    }
+
+    setIsVerifying(true);
+    try {
+      const ok = await onLoadFromNas(nasUrl, nasUser, nasPassword);
+      if (!ok) {
+        setErrorMsg('连接极空间失败，请仔细核对网址、账号或主密码');
+      }
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : '连接极空间服务发生异常');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
   // 防暴力破解状态 (基于 sessionStorage 跨刷新持久化)
   const [failedAttempts, setFailedAttempts] = useState<number>(() => getStoredRateLimit().failedCount);
@@ -167,18 +210,54 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
         </div>
 
         {/* 标题 */}
-        <div className="mb-6">
+        <div className="mb-5">
           <div className="border-l-4 border-brand-lime pl-2.5 mb-1.5">
             <h2 className="text-lg sm:text-xl font-bold text-slate-900">
-              {isInitialized ? '终端身份验证' : '初始化主密码'}
+              {isInitialized
+                ? '终端身份验证'
+                : initMode === 'nas'
+                ? '接入极空间云端金库'
+                : '初始化主密码'}
             </h2>
           </div>
           <p className="text-xs text-slate-500 font-mono">
             {isInitialized
               ? '密码数据已采用 AES-256 强加密，请输入主密码解锁终端并载入凭据。'
+              : initMode === 'nas'
+              ? '输入同步账号与主密码，即可瞬间从极空间 NAS 载入并还原全量密码凭据。'
               : 'SafeVault 绝不存储您的主密码。它是派生 AES 密钥的唯一钥匙，务必牢记。'}
           </p>
         </div>
+
+        {/* 未初始化时的选项卡：从极空间载入 vs 全新创建 */}
+        {!isInitialized && onLoadFromNas && (
+          <div className="flex border-b border-slate-200 mb-4">
+            <button
+              type="button"
+              onClick={() => { setInitMode('nas'); setErrorMsg(''); }}
+              className={`flex-1 py-2 text-center text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition-colors ${
+                initMode === 'nas'
+                  ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Server className="w-3.5 h-3.5 text-emerald-600" />
+              <span>从极空间云端载入 (推荐)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setInitMode('create'); setErrorMsg(''); }}
+              className={`flex-1 py-2 text-center text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition-colors ${
+                initMode === 'create'
+                  ? 'border-slate-800 text-slate-900 bg-slate-50'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>全新创建本地库</span>
+            </button>
+          </div>
+        )}
 
         {/* 防爆破锁定警示横幅 */}
         {cooldownRemaining > 0 && (
@@ -199,6 +278,96 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
             <span>{errorMsg}</span>
           </div>
         )}
+
+        {!isInitialized && initMode === 'nas' && onLoadFromNas ? (
+          /* 从极空间拉取金库表单 */
+          <form onSubmit={handleNasSubmit} className="space-y-3.5">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold text-slate-700">
+                  极空间 NAS 网址 (局域网 IP 或 远程外网网址)
+                </label>
+                {typeof window !== 'undefined' && window.location.protocol.startsWith('http') && (
+                  <button
+                    type="button"
+                    onClick={() => setNasUrl(window.location.origin)}
+                    className="text-[10px] text-emerald-600 hover:underline"
+                  >
+                    填入当前网页网址
+                  </button>
+                )}
+              </div>
+              <input
+                type="text"
+                required
+                value={nasUrl}
+                onChange={(e) => setNasUrl(e.target.value)}
+                placeholder="例如: http://192.168.1.100:8088 或 极空间远程网址"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 focus:border-slate-800 rounded font-mono text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-800"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                同步账号 (Username)
+              </label>
+              <input
+                type="text"
+                required
+                value={nasUser}
+                onChange={(e) => setNasUser(e.target.value)}
+                placeholder="此前在极空间注册的同步账号"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 focus:border-slate-800 rounded font-mono text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-800"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                主密码 (Master Password)
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={nasPassword}
+                  onChange={(e) => setNasPassword(e.target.value)}
+                  placeholder="输入主密码 (本地计算认证并解密金库)"
+                  className="w-full pl-3 pr-10 py-2 bg-slate-50 border border-slate-300 focus:border-slate-800 rounded font-mono text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-800"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-800 p-0.5"
+                >
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+              <p className="mt-1 text-[10px] text-slate-500">
+                💡 无论极空间远程域名如何变动，在此输入账号密码即可 1 秒同步并解锁，无需重新配置！
+              </p>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isVerifying}
+              className="w-full flex items-center bg-emerald-600 hover:bg-emerald-500 text-white rounded overflow-hidden shadow-sm transition-all group disabled:opacity-50"
+            >
+              <div className="w-10 h-10 bg-emerald-700 text-white flex items-center justify-center font-bold shrink-0">
+                <Cloud className="w-4 h-4" />
+              </div>
+              <div className="flex-1 text-center font-bold text-xs tracking-wider">
+                {isVerifying ? (
+                  <span className="flex items-center justify-center gap-1.5">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                    <span>正在从极空间载入并解密...</span>
+                  </span>
+                ) : (
+                  '从极空间载入金库并解锁'
+                )}
+              </div>
+            </button>
+          </form>
+        ) : (
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -285,6 +454,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
             </div>
           </button>
         </form>
+        )}
 
         <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-mono">
           <button

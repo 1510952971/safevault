@@ -13,7 +13,8 @@ import {
   Smartphone,
   Monitor,
   ExternalLink,
-  LogOut
+  LogOut,
+  Edit3
 } from 'lucide-react';
 import {
   NasSyncConfig,
@@ -68,6 +69,33 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [healthStatus, setHealthStatus] = useState<string | null>(null);
+
+  // 动态修改/切换 NAS 网址状态 (应对极空间远程域名变动)
+  const [isEditingUrl, setIsEditingUrl] = useState(false);
+  const [editUrlInput, setEditUrlInput] = useState('');
+  const [isSavingUrl, setIsSavingUrl] = useState(false);
+
+  // 保存并更新 NAS 网址 (无感切换，不丢失登录会话与 Token)
+  const handleSaveEditedUrl = async () => {
+    if (!editUrlInput.trim() || !syncConfig) return;
+    const cleanUrl = normalizeServerUrl(editUrlInput);
+    setIsSavingUrl(true);
+    const health = await checkNasHealth(cleanUrl);
+    setIsSavingUrl(false);
+    if (!health.success) {
+      const proceed = window.confirm(`⚠️ 连通性测试未通过：${health.message || '无法连接该网址'}\n\n是否仍要强制保存该网址？`);
+      if (!proceed) return;
+    }
+    const updatedCfg: NasSyncConfig = {
+      ...syncConfig,
+      serverUrl: cleanUrl
+    };
+    saveNasSyncConfig(updatedCfg);
+    setSyncConfig(updatedCfg);
+    onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
+    setIsEditingUrl(false);
+    addToast('success', `极空间同步网址已成功更新为：${cleanUrl}`);
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -401,6 +429,39 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
           {syncConfig ? (
             /* 已连接状态展示 */
             <div className="space-y-4">
+              {/* 智能检测：如果当前访问的网页地址与已保存的同步网址不同，提示一键适配 */}
+              {typeof window !== 'undefined' &&
+                window.location.protocol.startsWith('http') &&
+                normalizeServerUrl(window.location.origin) !== normalizeServerUrl(syncConfig.serverUrl) && (
+                  <div className="p-3 bg-sky-950/40 border border-sky-800/60 rounded-lg text-sky-200 text-xs flex items-center justify-between gap-3 shadow-sm">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ExternalLink className="w-4 h-4 text-sky-400 shrink-0" />
+                      <div className="text-[11px] leading-snug">
+                        <span>检测到当前网页网址已变更为：</span>
+                        <div className="font-mono text-sky-300 font-bold truncate">
+                          {window.location.origin}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updatedCfg = {
+                          ...syncConfig,
+                          serverUrl: normalizeServerUrl(window.location.origin)
+                        };
+                        saveNasSyncConfig(updatedCfg);
+                        setSyncConfig(updatedCfg);
+                        onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
+                        addToast('success', '已自动将极空间同步地址切换为当前网页网址！');
+                      }}
+                      className="px-2.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs font-bold shrink-0 transition-colors shadow"
+                    >
+                      一键切换为当前网址
+                    </button>
+                  </div>
+                )}
+
               <div className="p-4 bg-slate-800/50 border border-slate-700/80 rounded-lg space-y-3">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-700/60">
                   <div className="flex items-center gap-2">
@@ -413,10 +474,70 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-[11px] font-mono">
-                  <div>
-                    <span className="text-slate-500 block">NAS 网址 // SERVER:</span>
-                    <span className="text-slate-200 truncate block">{syncConfig.serverUrl}</span>
-                  </div>
+                  {/* NAS 网址一栏：支持随时修改更换 */}
+                  {isEditingUrl ? (
+                    <div className="col-span-2 bg-slate-900/90 p-3 rounded-lg border border-emerald-500/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-bold text-slate-200">
+                          更换极空间 NAS 网址 (保持当前登录，无需重新配置)
+                        </label>
+                        {typeof window !== 'undefined' && window.location.protocol.startsWith('http') && (
+                          <button
+                            type="button"
+                            onClick={() => setEditUrlInput(window.location.origin)}
+                            className="text-[10px] text-emerald-400 hover:underline"
+                          >
+                            填入当前网页网址
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={editUrlInput}
+                        onChange={(e) => setEditUrlInput(e.target.value)}
+                        placeholder="如: http://192.168.1.100:8088 或 新的远程域名"
+                        className="w-full px-2.5 py-1.5 bg-slate-800 border border-slate-600 rounded text-slate-100 font-mono text-xs focus:border-emerald-500 focus:outline-none"
+                      />
+                      <div className="flex items-center justify-end gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingUrl(false)}
+                          className="px-2.5 py-1 text-[11px] text-slate-400 hover:text-white rounded border border-slate-700"
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSavingUrl}
+                          onClick={handleSaveEditedUrl}
+                          className="px-3 py-1 text-[11px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded flex items-center gap-1"
+                        >
+                          {isSavingUrl ? <RefreshCw className="w-3 h-3 animate-spin" /> : null}
+                          <span>测试并保存</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="col-span-2 bg-slate-900/60 p-2.5 rounded border border-slate-700/50">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-slate-400 font-mono text-[10px]">NAS 网址 // SERVER:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditUrlInput(syncConfig.serverUrl);
+                            setIsEditingUrl(true);
+                          }}
+                          className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 hover:underline"
+                          title="远程域名发生变动时，可直接修改目标网址"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>更换网址 (应对域名变动)</span>
+                        </button>
+                      </div>
+                      <span className="text-slate-200 truncate block text-xs">{syncConfig.serverUrl}</span>
+                    </div>
+                  )}
+
                   <div>
                     <span className="text-slate-500 block">同步账号 // USER:</span>
                     <span className="text-slate-200 block">{syncConfig.username}</span>
@@ -425,11 +546,18 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                     <span className="text-slate-500 block">本地凭据体量:</span>
                     <span className="text-slate-200 block">{items.length} 项</span>
                   </div>
-                  <div>
+                  <div className="col-span-2 pt-1 border-t border-slate-700/40">
                     <span className="text-slate-500 block">最近成功同步:</span>
                     <span className="text-slate-200 block">
                       {syncConfig.lastSyncTime
-                        ? new Date(syncConfig.lastSyncTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                        ? new Date(syncConfig.lastSyncTime).toLocaleString('zh-CN', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                          })
                         : '待首次同步'}
                     </span>
                   </div>

@@ -10,7 +10,9 @@
 import { VaultMeta, EncryptedVaultItem, VaultItem } from '../types/vault';
 
 export interface NasSyncConfig {
-  serverUrl: string;       // 极空间 NAS 网址（局域网 IP 如 http://192.168.1.100:8088 或 远程外网网址）
+  serverUrl: string;       // 极空间 NAS 网址（当前激活连接的网址）
+  localUrl?: string;       // 备用：局域网内网地址 (例如 http://192.168.1.100:8088)
+  remoteUrl?: string;      // 备用：远程外网地址 (例如 https://xxx.zspace.cn:8088)
   username: string;        // 同步账号
   token: string;           // 极空间颁发的会话 Token
   salt: string;            // 客户端账户盐值

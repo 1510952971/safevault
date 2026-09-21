@@ -29,7 +29,14 @@ import { ChangeMasterPasswordModal } from './components/ChangeMasterPasswordModa
 import { EmergencyKitModal } from './components/EmergencyKitModal';
 import { SyncAccountModal } from './components/SyncAccountModal';
 import { UpdateCheckModal } from './components/UpdateCheckModal';
-import { loadNasSyncConfig, NasSyncConfig } from './utils/sync';
+import {
+  loadNasSyncConfig,
+  saveNasSyncConfig,
+  loginNasAccount,
+  pullVaultFromNas,
+  normalizeServerUrl,
+  NasSyncConfig
+} from './utils/sync';
 import { PrivacyShield } from './components/PrivacyShield';
 import { Toast } from './components/Toast';
 
@@ -215,6 +222,63 @@ export const App: React.FC = () => {
     setItems([]);
     setIsLocked(false);
     addToast('success', 'SafeVault 密码数据库初始化完成，请妥善保管主密码！');
+  };
+
+  // 3.5 从极空间云端载入并恢复已有金库 (无缝应对极空间远程域名变动或新设备接入)
+  const handleLoadFromNas = async (serverUrl: string, username: string, masterPassword: string): Promise<boolean> => {
+    try {
+      setIsLoading(true);
+      const cleanUrl = normalizeServerUrl(serverUrl);
+      const loginRes = await loginNasAccount(cleanUrl, username, masterPassword);
+      if (!loginRes.success || !loginRes.token || !loginRes.salt) {
+        addToast('error', loginRes.message || '极空间登录鉴权失败，请检查网址、账号或主密码');
+        return false;
+      }
+
+      const pullRes = await pullVaultFromNas(cleanUrl, loginRes.token);
+      if (!pullRes.success || !pullRes.vaultMeta) {
+        addToast('error', pullRes.message || '从极空间拉取加密金库失败');
+        return false;
+      }
+
+      // 使用主密码校验并解密拉取的元信息
+      const verifyRes = await verifyMasterPassword(masterPassword, pullRes.vaultMeta);
+      if (!verifyRes.success || !verifyRes.masterKey) {
+        addToast('error', '主密码错误：无法解密该极空间金库，请检查是否与创建时的主密码一致');
+        return false;
+      }
+
+      const encryptedItems = pullRes.encryptedItems || [];
+      const decryptedList = await decryptAllVaultItems(verifyRes.masterKey, encryptedItems);
+
+      // 持久化到当前域名/浏览器环境
+      saveStoredVaultMeta(pullRes.vaultMeta);
+      saveStoredEncryptedItems(encryptedItems);
+
+      const newCfg: NasSyncConfig = {
+        serverUrl: cleanUrl,
+        username: username.trim().toLowerCase(),
+        token: loginRes.token,
+        salt: loginRes.salt,
+        lastSyncTime: pullRes.updatedAt || new Date().toISOString(),
+        autoSync: true
+      };
+      saveNasSyncConfig(newCfg);
+      setNasConfig(newCfg);
+
+      setVaultMeta(pullRes.vaultMeta);
+      setMasterKey(verifyRes.masterKey);
+      setItems(decryptedList);
+      setIsLocked(false);
+
+      addToast('success', `成功接入极空间！已安全同步并还原 ${decryptedList.length} 条加密凭据！`);
+      return true;
+    } catch (err: unknown) {
+      addToast('error', err instanceof Error ? err.message : '连接极空间服务发生异常');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // 4. 输入主密码解锁
@@ -641,6 +705,7 @@ export const App: React.FC = () => {
               onUnlock={handleUnlock}
               onOpenRestore={() => setIsBackupModalOpen(true)}
               onResetVault={handleResetVault}
+              onLoadFromNas={handleLoadFromNas}
             />
           </div>
         ) : (
