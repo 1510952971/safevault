@@ -214,7 +214,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                 : 'text-rose-600 hover:bg-rose-50'
             }`}
           >
-            重置金库
+            重置密码库
           </button>
         </div>
 
@@ -348,7 +348,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             </div>
           )}
 
-          {/* 4. 重置金库 */}
+          {/* 4. 重置密码库 */}
           {activeTab === 'reset' && (
             <div className="space-y-4 text-center py-2">
               <div className="w-12 h-12 rounded-lg bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center mx-auto">
@@ -359,14 +359,14 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
               </p>
               <button
                 onClick={() => {
-                  if (window.confirm('警告：此操作将永久清空本地所有密码数据！是否确认重置？')) {
+                  if (window.confirm('警告：此操作将永久清空本地所有密码数据！是否确认重置密码库？')) {
                     onResetVaultConfirm();
                     onClose();
                   }
                 }}
                 className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded font-bold transition-colors"
               >
-                确认清空金库所有数据
+                确认清空密码库所有数据
               </button>
             </div>
           )}

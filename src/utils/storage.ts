@@ -75,14 +75,14 @@ export function saveStoredEncryptedItems(items: EncryptedVaultItem[]): void {
 }
 
 /**
- * 清空重置金库全部本地数据 (恢复出厂状态)
+ * 清空重置密码库全部本地数据 (恢复出厂状态)
  */
 export function resetEntireVault(): void {
   try {
     localStorage.removeItem(STORAGE_KEY_META);
     localStorage.removeItem(STORAGE_KEY_ITEMS);
   } catch (error) {
-    console.error('重置金库异常:', error);
+    console.error('重置密码库异常:', error);
   }
 }
 

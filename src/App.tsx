@@ -500,7 +500,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // 11. 重置金库处理
+  // 11. 重置密码库处理
   const handleResetVault = () => {
     resetEntireVault();
     setVaultMeta(null);
@@ -508,7 +508,7 @@ export const App: React.FC = () => {
     setItems([]);
     setIsLocked(true);
     setSecondaryAuthExpiry(null);
-    addToast('warning', '金库已清空并恢复出厂状态');
+    addToast('warning', '密码库已清空并恢复出厂状态');
   };
 
   // 12. 二级密码验证拦截

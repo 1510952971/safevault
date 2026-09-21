@@ -300,13 +300,13 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
             <button
               type="button"
               onClick={() => {
-                if (window.confirm('⚠️ 危险操作警告：\n\n重置金库将彻底清空当前设备本地保存的所有加密凭据与主密码，恢复至出厂未初始化状态！\n\n（若您此前导出了 .safevault.json 备份或同步到了极空间 NAS，可随时重新导入恢复）\n\n您确定要清空并重置金库吗？')) {
+                if (window.confirm('⚠️ 危险操作警告：\n\n重置密码库将彻底清空当前设备本地保存的所有加密凭据与主密码，恢复至出厂未初始化状态！\n\n（若您此前导出了 .safevault.json 备份或同步到了极空间 NAS，可随时重新导入恢复）\n\n您确定要清空并重置密码库吗？')) {
                   onResetVault();
                 }
               }}
               className="text-slate-400 hover:text-rose-600 transition-colors"
             >
-              重置金库
+              重置密码库
             </button>
           )}
         </div>
