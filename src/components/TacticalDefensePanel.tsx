@@ -37,7 +37,7 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
   };
 
   return (
-    <aside className="w-full lg:w-72 shrink-0 space-y-4">
+    <aside className="w-full lg:w-80 shrink-0 space-y-4">
       <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-tactical-sm">
         {/* 面板标题 */}
         <div className="border-l-4 border-brand-lime pl-2.5 mb-4">
@@ -48,12 +48,12 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
         {/* 核心安全指标列表 */}
         <div className="space-y-3 divide-y divide-slate-100 text-xs">
           {/* 超时自动锁屏 */}
-          <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-2 text-slate-600">
-              <Clock className="w-4 h-4 text-slate-400" />
-              <span>超时自动锁屏</span>
+          <div className="flex items-center justify-between pt-1 gap-2">
+            <div className="flex items-center gap-2 text-slate-600 shrink-0 whitespace-nowrap">
+              <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+              <span>自动锁屏</span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 shrink-0">
               <span className="font-mono font-bold text-slate-800">
                 {formatTimer(remainingLockSeconds)}
               </span>
@@ -61,11 +61,11 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
               <select
                 value={lockTimeoutMinutes}
                 onChange={(e) => onChangeLockTimeout(Number(e.target.value))}
-                className="bg-slate-50 border border-slate-200 rounded px-1 py-0.5 font-mono text-[11px] text-slate-700 focus:outline-none cursor-pointer"
+                className="bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-mono text-[11px] text-slate-700 focus:outline-none cursor-pointer hover:border-slate-300"
                 title="选择无操作自动锁屏时长"
               >
-                <option value={1}>1分钟 (测试)</option>
-                <option value={3}>3分钟 (推荐)</option>
+                <option value={1}>1分钟</option>
+                <option value={3}>3分钟</option>
                 <option value={5}>5分钟</option>
                 <option value={15}>15分钟</option>
                 <option value={30}>30分钟</option>
@@ -74,14 +74,14 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
           </div>
 
           {/* 二级独立密码查看防护 */}
-          <div className="flex items-center justify-between pt-2.5">
-            <div className="flex items-center gap-2 text-slate-600">
-              <KeyRound className="w-4 h-4 text-slate-400" />
+          <div className="flex items-center justify-between pt-2.5 gap-2">
+            <div className="flex items-center gap-2 text-slate-600 shrink-0 whitespace-nowrap">
+              <KeyRound className="w-4 h-4 text-slate-400 shrink-0" />
               <span>二级查看密码</span>
             </div>
             <button
               onClick={onOpenSecondaryPasswordModal}
-              className={`font-mono font-bold text-[11px] px-2 py-0.5 rounded border transition-colors ${
+              className={`font-mono font-bold text-[11px] px-2 py-0.5 rounded border transition-colors shrink-0 ${
                 hasSecondaryPassword
                   ? isSecondaryAuthorized
                     ? 'text-emerald-700 bg-emerald-50 border-emerald-300'
@@ -94,32 +94,32 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
           </div>
 
           {/* PBKDF2 算力拉伸 */}
-          <div className="flex items-center justify-between pt-2.5">
-            <div className="flex items-center gap-2 text-slate-600">
-              <Cpu className="w-4 h-4 text-slate-400" />
+          <div className="flex items-center justify-between pt-2.5 gap-2">
+            <div className="flex items-center gap-2 text-slate-600 shrink-0 whitespace-nowrap">
+              <Cpu className="w-4 h-4 text-slate-400 shrink-0" />
               <span>PBKDF2 算力拉伸</span>
             </div>
-            <span className="font-mono font-bold text-slate-800">100,000 轮</span>
+            <span className="font-mono font-bold text-slate-800 shrink-0">100,000 轮</span>
           </div>
 
           {/* 弱密码风险审计 */}
-          <div className="flex items-center justify-between pt-2.5">
-            <div className="flex items-center gap-2 text-slate-600">
-              <AlertTriangle className={`w-4 h-4 ${weakCount > 0 ? 'text-rose-500' : 'text-slate-400'}`} />
+          <div className="flex items-center justify-between pt-2.5 gap-2">
+            <div className="flex items-center gap-2 text-slate-600 shrink-0 whitespace-nowrap">
+              <AlertTriangle className={`w-4 h-4 shrink-0 ${weakCount > 0 ? 'text-rose-500' : 'text-slate-400'}`} />
               <span>弱密码风险项</span>
             </div>
-            <span className={`font-mono font-bold ${weakCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+            <span className={`font-mono font-bold shrink-0 ${weakCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
               {weakCount > 0 ? `${weakCount} 项待加固` : '达标 (0)'}
             </span>
           </div>
 
           {/* 跨站重复密码预警 */}
-          <div className="flex items-center justify-between pt-2.5">
-            <div className="flex items-center gap-2 text-slate-600">
-              <CopyCheck className={`w-4 h-4 ${reusedCount > 0 ? 'text-amber-500' : 'text-slate-400'}`} />
+          <div className="flex items-center justify-between pt-2.5 gap-2">
+            <div className="flex items-center gap-2 text-slate-600 shrink-0 whitespace-nowrap">
+              <CopyCheck className={`w-4 h-4 shrink-0 ${reusedCount > 0 ? 'text-amber-500' : 'text-slate-400'}`} />
               <span>重复使用密码</span>
             </div>
-            <span className={`font-mono font-bold ${reusedCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+            <span className={`font-mono font-bold shrink-0 ${reusedCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
               {reusedCount > 0 ? `${reusedCount} 处复用` : '独立隔离 (0)'}
             </span>
           </div>

@@ -84,8 +84,8 @@ export const Header: React.FC<HeaderProps> = ({
                   onChange={(e) => onChangeLockTimeout(Number(e.target.value))}
                   className="bg-transparent text-xs font-mono text-slate-700 font-semibold cursor-pointer focus:outline-none"
                 >
-                  <option value={1}>1分钟 (快速测试)</option>
-                  <option value={3}>3分钟 (默认)</option>
+                  <option value={1}>1分钟</option>
+                  <option value={3}>3分钟</option>
                   <option value={5}>5分钟</option>
                   <option value={15}>15分钟</option>
                   <option value={30}>30分钟</option>
