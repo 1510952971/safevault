@@ -530,5 +530,7 @@ def build_comprehensive_design_doc(output_path):
     print(f"Comprehensive design document successfully written to: {output_path}")
 
 if __name__ == "__main__":
-    out_file = r"c:\工作\工作日志\个人-计划\goupfu\密码小程序\SafeVault_程序系统详细设计说明书.docx"
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    out_file = os.path.join(current_dir, "SafeVault_程序系统详细设计说明书.docx")
     build_comprehensive_design_doc(out_file)

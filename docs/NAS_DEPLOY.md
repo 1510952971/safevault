@@ -15,11 +15,11 @@ SafeVault 是一款**零知识架构（Zero-Knowledge）**的个人私密密码�
 将本工程目录整体上传或通过 git clone 至 NAS 的某个目录，例如 `/volume1/docker/safevault`。
 
 ### 2. 启动容器
-进入该目录，终端执行：
+进入工程目录，终端执行：
 ```bash
-docker compose up -d --build
+docker compose -f deploy/docker-compose.yml up -d --build
 ```
-或者在群晖 Container Manager 的“项目（Project）”中，选择此目录下的 `docker-compose.yml` 点击“构建并启动”。
+或者在群晖 Container Manager 的“项目（Project）”中，选择 `deploy/docker-compose.yml` 点击“构建并启动”。
 
 ### 3. 访问系统
 在内网任何手机、平板、电脑的浏览器输入：
