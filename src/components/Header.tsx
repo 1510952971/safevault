@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Terminal,
   Clock,
   KeyRound,
   Sparkles,
@@ -13,6 +12,7 @@ import {
   Key,
   FileText
 } from 'lucide-react';
+import { SafeVaultLogo } from './SafeVaultLogo';
 
 interface HeaderProps {
   isLocked: boolean;
@@ -77,9 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
       
       {/* 左侧系统标识与版本 (绝对单行，绝不折行) */}
       <div className="flex items-center gap-2.5 shrink-0 whitespace-nowrap">
-        <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-brand-lime shadow-xs shrink-0">
-          <Terminal className="w-4 h-4" />
-        </div>
+        <SafeVaultLogo size={32} className="shrink-0 drop-shadow-xs" />
         <div className="flex items-center gap-2 whitespace-nowrap">
           <h1 className="font-extrabold text-sm sm:text-base tracking-tight text-slate-900 flex items-center gap-1.5 whitespace-nowrap">
             <span>凭据管理终端</span>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Lock, KeyRound, Eye, EyeOff, AlertTriangle, RefreshCw, UploadCloud, Terminal, ShieldAlert } from 'lucide-react';
+import { Shield, Lock, KeyRound, Eye, EyeOff, AlertTriangle, RefreshCw, UploadCloud, ShieldAlert } from 'lucide-react';
 import { calculatePasswordStrength } from '../utils/crypto';
+import { SafeVaultLogo } from './SafeVaultLogo';
 
 interface MasterAuthModalProps {
   isInitialized: boolean;
@@ -157,9 +158,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
         {/* 顶部战术标识 */}
         <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-slate-900 flex items-center justify-center text-brand-lime">
-              <Terminal className="w-3.5 h-3.5" />
-            </div>
+            <SafeVaultLogo size={22} className="shrink-0" />
             <span className="font-mono text-xs font-bold text-slate-800 tracking-wider">
               SAFEVAULT // SECURITY AUTH
             </span>
