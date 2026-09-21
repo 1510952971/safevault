@@ -28,11 +28,25 @@ export interface VaultMeta {
   updatedAt: string;           // 最后修改时间戳
 }
 
+export interface CustomField {
+  id: string;
+  label: string;
+  value: string;
+  isProtected?: boolean; // 是否隐藏掩码保护
+}
+
+export interface PasswordHistoryEntry {
+  password: string;
+  changedAt: string;     // ISO 8601
+}
+
 export interface EncryptedPayload {
   username: string;
   password: string;
   notes?: string;
   totpSecret?: string;         // TOTP 2FA 密钥 (加密存放)
+  customFields?: CustomField[]; // 自定义扩展安全字段 (加密存放)
+  passwordHistory?: PasswordHistoryEntry[]; // 密码修改历史 (加密存放)
 }
 
 export interface EncryptedVaultItem {
@@ -42,6 +56,8 @@ export interface EncryptedVaultItem {
   website?: string;            // 网站登录链接 (可选)
   isFavorite?: boolean;        // 是否核心置顶凭据
   tags?: string[];             // 标签
+  isDeleted?: boolean;         // 是否移入废纸篓 (软删除)
+  deletedAt?: string;          // 移入废纸篓时间戳
   encryptedPayload: string;    // Base64: 经 AES-GCM-256 加密后的 EncryptedPayload JSON
   iv: string;                  // Base64: 每次加密生成的 12 字节随机 IV
   createdAt: string;           // ISO 8601
@@ -59,6 +75,10 @@ export interface DecryptedVaultItem {
   totpSecret?: string;         // TOTP 2FA 密钥
   isFavorite?: boolean;        // 是否核心置顶凭据
   tags?: string[];
+  isDeleted?: boolean;         // 是否移入废纸篓 (软删除)
+  deletedAt?: string;          // 移入废纸篓时间戳
+  customFields?: CustomField[];
+  passwordHistory?: PasswordHistoryEntry[];
   createdAt: string;
   updatedAt: string;
 }

@@ -12,7 +12,8 @@ export interface DetailedSecurityAudit extends VaultSecurityAudit {
   reusedGroups: Record<string, string[]>; // password -> item titles
 }
 
-export function performSecurityAudit(items: DecryptedVaultItem[]): DetailedSecurityAudit {
+export function performSecurityAudit(allItems: DecryptedVaultItem[]): DetailedSecurityAudit {
+  const items = allItems.filter((i) => !i.isDeleted);
   const totalItems = items.length;
   if (totalItems === 0) {
     return {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Eye, EyeOff, Sparkles, Star, Globe, User, Lock, FileText, KeyRound, Shield } from 'lucide-react';
-import { DecryptedVaultItem, CategoryType } from '../types/vault';
+import { X, Eye, EyeOff, Sparkles, Star, Globe, User, Lock, FileText, KeyRound, Shield, Plus, Trash2, History } from 'lucide-react';
+import { DecryptedVaultItem, CategoryType, CustomField, PasswordHistoryEntry } from '../types/vault';
 import { CATEGORIES } from '../utils/storage';
 import { calculatePasswordStrength, generateSecurePassword } from '../utils/crypto';
 import { isValidTotpSecret } from '../utils/totp';
@@ -26,6 +26,8 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
   const [totpSecret, setTotpSecret] = useState('');
   const [notes, setNotes] = useState('');
   const [isFavorite, setIsFavorite] = useState(false);
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -40,6 +42,7 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
       setTotpSecret(editItem.totpSecret || '');
       setNotes(editItem.notes || '');
       setIsFavorite(!!editItem.isFavorite);
+      setCustomFields(editItem.customFields || []);
     } else {
       setTitle('');
       setCategory('website');
@@ -49,9 +52,11 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
       setTotpSecret('');
       setNotes('');
       setIsFavorite(false);
+      setCustomFields([]);
     }
     setErrorMsg('');
     setShowPassword(false);
+    setShowHistory(false);
   }, [editItem, isOpen]);
 
   if (!isOpen) return null;
@@ -107,6 +112,21 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
       return;
     }
 
+    // 密码历史记录轮换：若为编辑现有项且修改了密码，将原密码归档至历史记录
+    let updatedHistory = editItem?.passwordHistory || [];
+    if (editItem && editItem.password && editItem.password !== password) {
+      const newHistoryEntry: PasswordHistoryEntry = {
+        password: editItem.password,
+        changedAt: new Date().toISOString()
+      };
+      updatedHistory = [newHistoryEntry, ...updatedHistory].slice(0, 10);
+    }
+
+    // 过滤掉空白自定义字段
+    const validCustomFields = customFields
+      .map((f) => ({ ...f, label: f.label.trim(), value: f.value.trim() }))
+      .filter((f) => f.label || f.value);
+
     try {
       setIsSubmitting(true);
       setErrorMsg('');
@@ -119,7 +139,11 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
           website: website.trim(),
           totpSecret: totpSecret.trim().toUpperCase(),
           notes: notes.trim(),
-          isFavorite
+          isFavorite,
+          customFields: validCustomFields,
+          passwordHistory: updatedHistory,
+          isDeleted: editItem?.isDeleted,
+          deletedAt: editItem?.deletedAt
         },
         editItem?.id
       );
@@ -129,6 +153,26 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleAddCustomField = () => {
+    setCustomFields((prev) => [
+      ...prev,
+      {
+        id: `cf-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        label: '',
+        value: '',
+        isProtected: false
+      }
+    ]);
+  };
+
+  const handleUpdateCustomField = (id: string, key: keyof CustomField, val: any) => {
+    setCustomFields((prev) => prev.map((f) => (f.id === id ? { ...f, [key]: val } : f)));
+  };
+
+  const handleRemoveCustomField = (id: string) => {
+    setCustomFields((prev) => prev.filter((f) => f.id !== id));
   };
 
   return (
@@ -312,16 +356,105 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
           <div>
             <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1.5">
               <FileText className="w-3.5 h-3.5 text-slate-400" />
-              <span>私密备注 / 恢复代码 (AES端到端加密)</span>
+              <span>私密备注 / 备忘说明 (AES-256端到端加密)</span>
             </label>
             <textarea
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="例如：备用恢复代码、密保答案、PIN码等..."
+              placeholder="例如：备用应急代码、额外备忘等..."
               className="w-full px-3 py-2 bg-slate-50 border border-slate-300 focus:border-slate-800 rounded text-slate-900 focus:outline-none resize-none"
             />
           </div>
+
+          {/* 自定义扩展安全字段 */}
+          <div className="space-y-2 pt-1 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-slate-700 flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5 text-slate-400" />
+                <span>自定义扩展字段 (PIN/安全问题/Token)</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleAddCustomField}
+                className="text-[11px] font-semibold text-slate-800 hover:text-black flex items-center gap-1 px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded border border-slate-200 transition-colors"
+              >
+                <Plus className="w-3 h-3" />
+                <span>添加字段</span>
+              </button>
+            </div>
+
+            {customFields.length > 0 && (
+              <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
+                {customFields.map((field) => (
+                  <div key={field.id} className="flex items-center gap-2 bg-slate-50 p-1.5 rounded border border-slate-200">
+                    <input
+                      type="text"
+                      value={field.label}
+                      onChange={(e) => handleUpdateCustomField(field.id, 'label', e.target.value)}
+                      placeholder="字段名 (如: PIN码)"
+                      className="w-1/3 px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none"
+                    />
+                    <input
+                      type={field.isProtected ? 'password' : 'text'}
+                      value={field.value}
+                      onChange={(e) => handleUpdateCustomField(field.id, 'value', e.target.value)}
+                      placeholder="字段内容"
+                      className="flex-1 px-2 py-1 bg-white border border-slate-200 rounded text-xs text-slate-800 font-mono focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateCustomField(field.id, 'isProtected', !field.isProtected)}
+                      title={field.isProtected ? '当前为敏感防窥掩码保护' : '点击开启敏感防窥掩码'}
+                      className={`p-1 rounded text-xs ${field.isProtected ? 'text-slate-900 bg-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCustomField(field.id)}
+                      className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                      title="删除字段"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 密码历史版本记录 (编辑现有项时展示) */}
+          {editItem?.passwordHistory && editItem.passwordHistory.length > 0 && (
+            <div className="p-2.5 bg-slate-50 border border-slate-200 rounded">
+              <button
+                type="button"
+                onClick={() => setShowHistory(!showHistory)}
+                className="w-full flex items-center justify-between text-slate-700 hover:text-slate-950 text-xs font-semibold"
+              >
+                <div className="flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-slate-500" />
+                  <span>历史密码记录 ({editItem.passwordHistory.length} 次轮换留档)</span>
+                </div>
+                <span className="text-[10px] font-mono text-slate-400">
+                  {showHistory ? '收起 ▲' : '展开查看 ▼'}
+                </span>
+              </button>
+
+              {showHistory && (
+                <div className="mt-2 space-y-1.5 border-t border-slate-200 pt-2 max-h-28 overflow-y-auto">
+                  {editItem.passwordHistory.map((h, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-[11px] font-mono bg-white p-1.5 rounded border border-slate-100">
+                      <span className="text-slate-500">
+                        {new Date(h.changedAt).toLocaleDateString()} {new Date(h.changedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <span className="text-slate-400 text-[10px]">已加密安全归档</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 置顶勾选开关 */}
           <div className="flex items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded">

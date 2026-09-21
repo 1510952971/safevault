@@ -213,7 +213,9 @@ export async function encryptVaultItem(
       username: item.username,
       password: item.password,
       notes: item.notes || '',
-      totpSecret: item.totpSecret || ''
+      totpSecret: item.totpSecret || '',
+      customFields: item.customFields || [],
+      passwordHistory: item.passwordHistory || []
     };
 
     const payloadBytes = textEncoder.encode(JSON.stringify(payload));
@@ -234,9 +236,11 @@ export async function encryptVaultItem(
       website: item.website || '',
       isFavorite: !!item.isFavorite,
       tags: item.tags || [],
+      isDeleted: !!item.isDeleted,
+      deletedAt: item.deletedAt,
       encryptedPayload: bufferToBase64(new Uint8Array(cipherBuffer)),
       iv: bufferToBase64(iv),
-      createdAt: now,
+      createdAt: (item as any).createdAt || now,
       updatedAt: now
     };
   } catch (err) {
@@ -272,10 +276,14 @@ export async function decryptVaultItem(
       website: encryptedItem.website,
       isFavorite: encryptedItem.isFavorite || false,
       tags: encryptedItem.tags || [],
+      isDeleted: encryptedItem.isDeleted || false,
+      deletedAt: encryptedItem.deletedAt,
       username: payload.username,
       password: payload.password,
       notes: payload.notes,
       totpSecret: payload.totpSecret,
+      customFields: payload.customFields || [],
+      passwordHistory: payload.passwordHistory || [],
       createdAt: encryptedItem.createdAt,
       updatedAt: encryptedItem.updatedAt
     };

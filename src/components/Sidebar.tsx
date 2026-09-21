@@ -9,7 +9,8 @@ import {
   MessageCircle,
   Gamepad2,
   Key,
-  ShieldCheck
+  ShieldCheck,
+  Trash2
 } from 'lucide-react';
 import { CategoryType } from '../types/vault';
 import { CATEGORIES } from '../utils/storage';
@@ -19,6 +20,7 @@ interface SidebarProps {
   onSelectCategory: (cat: string) => void;
   favoritesCount?: number;
   riskyCount?: number;
+  trashCount?: number;
   totalCount?: number;
 }
 
@@ -36,6 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectCategory,
   favoritesCount = 0,
   riskyCount = 0,
+  trashCount = 0,
   totalCount = 0
 }) => {
   return (
@@ -171,6 +174,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </button>
             );
           })}
+
+          {/* 分隔区 */}
+          <div className="pt-2 pb-1 px-3">
+            <div className="h-px bg-slate-200" />
+          </div>
+
+          {/* 废纸篓 99 */}
+          <button
+            onClick={() => onSelectCategory('trash')}
+            className={`w-full text-left px-3.5 py-2.5 transition-all flex items-center justify-between group whitespace-nowrap lg:whitespace-normal shrink-0 ${
+              selectedCategory === 'trash'
+                ? 'bg-[#161922] text-white font-semibold'
+                : 'bg-white hover:bg-slate-50 text-slate-600'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <span
+                className={`w-1 h-3.5 rounded-full ${
+                  selectedCategory === 'trash' ? 'bg-rose-500' : 'bg-transparent'
+                }`}
+              />
+              <Trash2 className={`w-4 h-4 shrink-0 ${selectedCategory === 'trash' ? 'text-rose-400' : 'text-slate-400'}`} />
+              <span className="text-xs">废纸篓</span>
+            </div>
+            <span
+              className={`font-mono text-[11px] ml-2 px-1.5 py-0.2 rounded font-bold ${
+                selectedCategory === 'trash'
+                  ? 'text-rose-400'
+                  : trashCount > 0
+                  ? 'text-rose-600 bg-rose-50'
+                  : 'text-slate-400'
+              }`}
+            >
+              {trashCount}
+            </span>
+          </button>
         </nav>
       </div>
 

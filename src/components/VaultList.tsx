@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, ShieldAlert, KeyRound, Shield, Star, ExternalLink, ArrowUpDown } from 'lucide-react';
+import { Plus, ShieldAlert, KeyRound, Shield, Star, ExternalLink, ArrowUpDown, Trash2, RotateCcw } from 'lucide-react';
 import { DecryptedVaultItem, SortOption } from '../types/vault';
 import { Sidebar } from './Sidebar';
 import { VaultOverview } from './VaultOverview';
@@ -23,6 +23,9 @@ interface VaultListProps {
   onAddNew: () => void;
   onEditItem: (item: DecryptedVaultItem) => void;
   onDeleteItem: (id: string, title: string) => void;
+  onRestoreItem?: (id: string) => void;
+  onPermanentDeleteItem?: (id: string, title: string) => void;
+  onEmptyTrash?: () => void;
   onToggleFavorite: (id: string) => void;
   onCopyUsername: (username: string) => void;
   onCopyPassword: (password: string) => void;
@@ -45,6 +48,9 @@ export const VaultList: React.FC<VaultListProps> = ({
   onAddNew,
   onEditItem,
   onDeleteItem,
+  onRestoreItem,
+  onPermanentDeleteItem,
+  onEmptyTrash,
   onToggleFavorite,
   onCopyUsername,
   onCopyPassword,
@@ -56,20 +62,27 @@ export const VaultList: React.FC<VaultListProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [sortBy, setSortBy] = useState<SortOption>('favorites_first');
 
-  // 全局密码安全审计
+  const isTrashMode = selectedCategory === 'trash';
+  const activeItems = useMemo(() => items.filter((i) => !i.isDeleted), [items]);
+  const trashItems = useMemo(() => items.filter((i) => i.isDeleted), [items]);
+
+  // 全局密码安全审计 (仅审计活跃凭据)
   const audit = useMemo(() => performSecurityAudit(items), [items]);
 
   // 过滤条目
+  const sourceItems = isTrashMode ? trashItems : activeItems;
   const filteredItems = useMemo(() => {
-    let result = items.filter((item) => {
+    let result = sourceItems.filter((item) => {
       // 分类与特殊视图过滤
       let matchesCategory = true;
-      if (selectedCategory === 'favorites') {
-        matchesCategory = !!item.isFavorite;
-      } else if (selectedCategory === 'risky') {
-        matchesCategory = audit.riskyItemIds.includes(item.id);
-      } else if (selectedCategory !== 'all') {
-        matchesCategory = item.category === selectedCategory;
+      if (!isTrashMode) {
+        if (selectedCategory === 'favorites') {
+          matchesCategory = !!item.isFavorite;
+        } else if (selectedCategory === 'risky') {
+          matchesCategory = audit.riskyItemIds.includes(item.id);
+        } else if (selectedCategory !== 'all') {
+          matchesCategory = item.category === selectedCategory;
+        }
       }
 
       // 关键词检索
@@ -102,10 +115,12 @@ export const VaultList: React.FC<VaultListProps> = ({
       }
       return 0;
     });
-  }, [items, searchQuery, selectedCategory, sortBy, audit]);
+  }, [sourceItems, isTrashMode, searchQuery, selectedCategory, sortBy, audit]);
 
-  // 核心置顶凭据（优先选择第一个被用户加星置顶的凭据）
-  const corePinnedItem = items.find((i) => i.isFavorite) || (items.length > 0 ? items[0] : null);
+  // 核心置顶凭据 (废纸篓模式下不显示置顶)
+  const corePinnedItem = isTrashMode
+    ? null
+    : activeItems.find((i) => i.isFavorite) || (activeItems.length > 0 ? activeItems[0] : null);
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row h-full overflow-hidden w-full relative">
@@ -115,21 +130,47 @@ export const VaultList: React.FC<VaultListProps> = ({
         onSelectCategory={setSelectedCategory}
         favoritesCount={audit.favoriteCount}
         riskyCount={audit.riskyItemIds.length}
-        totalCount={items.length}
+        trashCount={trashItems.length}
+        totalCount={activeItems.length}
       />
 
       {/* 2. 中部核心主监控看板与凭据列表 (独立容器平滑滚动) */}
       <section className="flex-1 h-full overflow-y-auto min-w-0 bg-[#F5F6F8] p-4 sm:p-6 space-y-5 scrollbar-thin">
-        {/* 顶部保险库总览 HUD */}
-        <VaultOverview
-          totalItems={items.length}
-          favoriteCount={audit.favoriteCount}
-          weakCount={audit.weakCount}
-          reusedCount={audit.reusedCount}
-          healthScore={audit.healthScore}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-        />
+        {/* 废纸篓模式横幅 或 正常模式保险库总览 HUD */}
+        {isTrashMode ? (
+          <div className="bg-rose-50 border border-rose-200 rounded-lg p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-tactical-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-rose-900 text-sm">密码废纸篓 (已软删除凭据)</h4>
+                <p className="text-xs text-rose-600 mt-0.5">
+                  已移入废纸篓的凭据已从主库隔离，不参与安全体检。您可以随时一键恢复，或彻底粉碎。
+                </p>
+              </div>
+            </div>
+            {trashItems.length > 0 && onEmptyTrash && (
+              <button
+                onClick={onEmptyTrash}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold transition-colors shrink-0 shadow-sm flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>清空废纸篓 ({trashItems.length})</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <VaultOverview
+            totalItems={activeItems.length}
+            favoriteCount={audit.favoriteCount}
+            weakCount={audit.weakCount}
+            reusedCount={audit.reusedCount}
+            healthScore={audit.healthScore}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+          />
+        )}
 
         {/* 核心置顶凭据展示区 (专业密码管理器设计) */}
         <div>
@@ -280,9 +321,12 @@ export const VaultList: React.FC<VaultListProps> = ({
                     isWeak={isWeak}
                     isReused={isReused}
                     isSecondaryAuthRequired={isSecondaryAuthRequired}
+                    isTrashMode={isTrashMode}
                     onRequestSecondaryAuth={onRequestSecondaryAuth}
                     onEdit={onEditItem}
                     onDelete={onDeleteItem}
+                    onRestore={onRestoreItem}
+                    onPermanentDelete={onPermanentDeleteItem}
                     onToggleFavorite={onToggleFavorite}
                     onCopyUsername={onCopyUsername}
                     onCopyPassword={onCopyPassword}
@@ -291,11 +335,13 @@ export const VaultList: React.FC<VaultListProps> = ({
                 );
               })}
 
-              {/* 空置录入槽位卡片 */}
-              <EmptySlotCard
-                slotNumber={(filteredItems.length + 1).toString().padStart(2, '0')}
-                onClick={onAddNew}
-              />
+              {/* 空置录入槽位卡片 (仅在正常库模式下展示) */}
+              {!isTrashMode && (
+                <EmptySlotCard
+                  slotNumber={(filteredItems.length + 1).toString().padStart(2, '0')}
+                  onClick={onAddNew}
+                />
+              )}
             </div>
           )}
 

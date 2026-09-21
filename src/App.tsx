@@ -23,6 +23,7 @@ import { PasswordModal } from './components/PasswordModal';
 import { PasswordGeneratorModal } from './components/PasswordGeneratorModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
 import { SecondaryAuthModal, SecondaryAuthModalMode } from './components/SecondaryAuthModal';
+import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { Toast } from './components/Toast';
 
 export const App: React.FC = () => {
@@ -38,6 +39,7 @@ export const App: React.FC = () => {
   const [editingItem, setEditingItem] = useState<DecryptedVaultItem | null>(null);
   const [isGeneratorModalOpen, setIsGeneratorModalOpen] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   // 二级密码鉴权状态
   const [secondaryAuthExpiry, setSecondaryAuthExpiry] = useState<number | null>(null);
@@ -89,9 +91,24 @@ export const App: React.FC = () => {
     setIsGeneratorModalOpen(false);
     setIsBackupModalOpen(false);
     setIsSecondaryModalOpen(false);
+    setIsCommandPaletteOpen(false);
     pendingSecondaryActionRef.current = null;
     addToast('info', '保险箱已安全锁定');
   }, []);
+
+  // 全局快捷键监听 (Ctrl+K / Cmd+K 唤起战术命令中枢)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (!isLocked && masterKey) {
+          setIsCommandPaletteOpen((prev) => !prev);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isLocked, masterKey]);
 
   // 2. 超时无操作自动锁定机制 (支持实时每秒倒计时与自定义时长)
   const lastActivityRef = useRef<number>(Date.now());
@@ -219,15 +236,71 @@ export const App: React.FC = () => {
     }
   };
 
-  // 6. 删除条目
-  const handleDeleteItem = (id: string, title: string) => {
-    if (!window.confirm(`确定要永久删除 [${title}] 吗？此操作无法撤销。`)) return;
+  // 6. 移至废纸篓 (软删除，防止误删，支持一键恢复)
+  const handleSoftDelete = async (id: string, title: string) => {
+    if (!masterKey) return;
+    const target = items.find((i) => i.id === id);
+    if (!target) return;
+
+    const updatedDecrypted: DecryptedVaultItem = {
+      ...target,
+      isDeleted: true,
+      deletedAt: new Date().toISOString()
+    };
+
+    const encryptedItem = await encryptVaultItem(masterKey, updatedDecrypted, id);
+    const storedItems = loadStoredEncryptedItems();
+    const updatedEncryptedItems = storedItems.map((i) => (i.id === id ? encryptedItem : i));
+    saveStoredEncryptedItems(updatedEncryptedItems);
+
+    setItems((prev) => prev.map((i) => (i.id === id ? updatedDecrypted : i)));
+    addToast('info', `已将 [${title}] 移至废纸篓，可在废纸篓中随时恢复`);
+  };
+
+  // 6.1 从废纸篓一键恢复
+  const handleRestoreItem = async (id: string) => {
+    if (!masterKey) return;
+    const target = items.find((i) => i.id === id);
+    if (!target) return;
+
+    const updatedDecrypted: DecryptedVaultItem = {
+      ...target,
+      isDeleted: false,
+      deletedAt: undefined
+    };
+
+    const encryptedItem = await encryptVaultItem(masterKey, updatedDecrypted, id);
+    const storedItems = loadStoredEncryptedItems();
+    const updatedEncryptedItems = storedItems.map((i) => (i.id === id ? encryptedItem : i));
+    saveStoredEncryptedItems(updatedEncryptedItems);
+
+    setItems((prev) => prev.map((i) => (i.id === id ? updatedDecrypted : i)));
+    addToast('success', `已恢复 [${target.title}] 至密码库`);
+  };
+
+  // 6.2 彻底粉碎删除 (从加密介质彻底抹除)
+  const handlePermanentDeleteItem = (id: string, title: string) => {
+    if (!window.confirm(`⚠️ 危险操作：确定要彻底粉碎 [${title}] 吗？\n此凭据将从加密存储中被永久覆写抹除，不可恢复！`)) return;
 
     const storedItems = loadStoredEncryptedItems();
     const updated = storedItems.filter((i) => i.id !== id);
     saveStoredEncryptedItems(updated);
     setItems((prev) => prev.filter((i) => i.id !== id));
-    addToast('info', `已删除 [${title}]`);
+    addToast('warning', `已彻底粉碎抹除 [${title}]`);
+  };
+
+  // 6.3 一键清空废纸篓
+  const handleEmptyTrash = () => {
+    const trashItems = items.filter((i) => i.isDeleted);
+    if (trashItems.length === 0) return;
+    if (!window.confirm(`⚠️ 确定要清空废纸篓中的全部 ${trashItems.length} 个密码条目吗？\n此操作将不可逆地永久抹除这些加密凭据！`)) return;
+
+    const trashIds = new Set(trashItems.map((i) => i.id));
+    const storedItems = loadStoredEncryptedItems();
+    const updated = storedItems.filter((i) => !trashIds.has(i.id));
+    saveStoredEncryptedItems(updated);
+    setItems((prev) => prev.filter((i) => !trashIds.has(i.id)));
+    addToast('warning', `已清空废纸篓，共抹除了 ${trashItems.length} 条凭据`);
   };
 
   // 6.5 切换置顶状态
@@ -272,6 +345,17 @@ export const App: React.FC = () => {
       addToast('success', '密码已安全复制，30秒后将自动清除剪贴板');
     } else {
       addToast('error', '复制失败，请手动选择复制');
+    }
+  };
+
+  // 8.1 受二级密码保护的复制密码拦截
+  const handleCopyPasswordWithAuth = (password: string) => {
+    if (isSecondaryAuthRequired) {
+      handleRequestSecondaryAuth(() => {
+        handleCopyPassword(password);
+      });
+    } else {
+      handleCopyPassword(password);
     }
   };
 
@@ -496,7 +580,10 @@ export const App: React.FC = () => {
               setEditingItem(item);
               setIsPasswordModalOpen(true);
             }}
-            onDeleteItem={handleDeleteItem}
+            onDeleteItem={handleSoftDelete}
+            onRestoreItem={handleRestoreItem}
+            onPermanentDeleteItem={handlePermanentDeleteItem}
+            onEmptyTrash={handleEmptyTrash}
             onToggleFavorite={handleToggleFavorite}
             onCopyUsername={handleCopyUsername}
             onCopyPassword={handleCopyPassword}
@@ -548,6 +635,32 @@ export const App: React.FC = () => {
         onSetupSuccess={handleSetupSecondaryPassword}
         onDisableSuccess={handleDisableSecondaryPassword}
         onChangePasswordSuccess={handleChangeSecondaryPassword}
+      />
+
+      {/* 全局 Ctrl+K 战术命令中枢弹窗 */}
+      <CommandPaletteModal
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        items={items}
+        onSelectCopyPassword={handleCopyPasswordWithAuth}
+        onSelectCopyUsername={handleCopyUsername}
+        onOpenNew={() => {
+          setIsCommandPaletteOpen(false);
+          setEditingItem(null);
+          setIsPasswordModalOpen(true);
+        }}
+        onOpenGenerator={() => {
+          setIsCommandPaletteOpen(false);
+          setIsGeneratorModalOpen(true);
+        }}
+        onOpenBackup={() => {
+          setIsCommandPaletteOpen(false);
+          setIsBackupModalOpen(true);
+        }}
+        onLockNow={() => {
+          setIsCommandPaletteOpen(false);
+          handleLockNow();
+        }}
       />
 
       {/* 浮动轻量 Toast 提示 */}
