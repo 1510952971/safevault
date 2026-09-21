@@ -108,17 +108,18 @@ export const VaultList: React.FC<VaultListProps> = ({
   const corePinnedItem = items.find((i) => i.isFavorite) || (items.length > 0 ? items[0] : null);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 items-start">
-      {/* 1. 左侧竖向分类与快捷索引 */}
+    <div className="flex-1 flex flex-col lg:flex-row h-full overflow-hidden w-full relative">
+      {/* 1. 左侧顶天立地分类导航停靠栏 */}
       <Sidebar
         selectedCategory={selectedCategory}
         onSelectCategory={setSelectedCategory}
         favoritesCount={audit.favoriteCount}
         riskyCount={audit.riskyItemIds.length}
+        totalCount={items.length}
       />
 
-      {/* 2. 中部核心主监控看板与凭据列表 */}
-      <section className="flex-1 min-w-0 w-full space-y-6">
+      {/* 2. 中部核心主监控看板与凭据列表 (独立容器平滑滚动) */}
+      <section className="flex-1 h-full overflow-y-auto min-w-0 bg-[#F5F6F8] p-4 sm:p-6 space-y-5 scrollbar-thin">
         {/* 顶部保险库总览 HUD */}
         <VaultOverview
           totalItems={items.length}
@@ -214,7 +215,7 @@ export const VaultList: React.FC<VaultListProps> = ({
         </div>
 
         {/* 密码凭据列表专区 */}
-        <div>
+        <div className="pb-8">
           <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
             <div className="flex items-center gap-2 border-l-4 border-brand-lime pl-2.5">
               <h3 className="text-sm font-bold text-slate-900">

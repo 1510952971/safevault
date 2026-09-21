@@ -35,8 +35,8 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200 px-4 sm:px-8 py-3 transition-all shadow-sm">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+    <header className="shrink-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 py-2.5 transition-all shadow-sm w-full">
+      <div className="w-full flex items-center justify-between gap-4">
         {/* 左侧系统标识 */}
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-brand-lime shadow-sm">

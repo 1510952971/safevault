@@ -440,7 +440,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#f1f3f7] text-slate-900">
+    <div className="h-screen overflow-hidden flex flex-col bg-[#F5F6F8] text-slate-900 selection:bg-brand-lime selection:text-black">
       {/* 顶部导航 */}
       <Header
         isLocked={isLocked}
@@ -459,19 +459,21 @@ export const App: React.FC = () => {
         onOpenBackup={() => setIsBackupModalOpen(true)}
       />
 
-      {/* 主体内容 */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-8">
+      {/* 主体工作台 */}
+      <main className="flex-1 flex overflow-hidden w-full relative">
         {isLocked ? (
-          // 锁定状态下展示认证弹窗
-          <MasterAuthModal
-            isInitialized={!!vaultMeta}
-            onInitialize={handleInitialize}
-            onUnlock={handleUnlock}
-            onOpenRestore={() => setIsBackupModalOpen(true)}
-            onResetVault={handleResetVault}
-          />
+          // 锁定状态下居中展示认证弹窗
+          <div className="flex-1 flex items-center justify-center p-4 overflow-y-auto">
+            <MasterAuthModal
+              isInitialized={!!vaultMeta}
+              onInitialize={handleInitialize}
+              onUnlock={handleUnlock}
+              onOpenRestore={() => setIsBackupModalOpen(true)}
+              onResetVault={handleResetVault}
+            />
+          </div>
         ) : (
-          // 解锁状态下展示战术密码列表
+          // 解锁状态下展示沉浸式三栏工作台
           <VaultList
             items={items}
             isLoading={isLoading}
