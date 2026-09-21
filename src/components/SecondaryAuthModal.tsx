@@ -280,7 +280,7 @@ export const SecondaryAuthModal: React.FC<SecondaryAuthModalProps> = ({
               </div>
             ) : (
               <div className="p-3 bg-slate-50 border border-slate-200 rounded text-slate-600 leading-relaxed">
-                开启二级密码后，在密码管理库内<strong>点击显示明文密码</strong>或<strong>复制密码</strong>时，必须通过二级密码验证，有效防止离开电脑时被熟人窥屏。
+                开启二级密码后，在密码数据库内<strong>点击显示明文密码</strong>或<strong>复制密码</strong>时，必须通过二级密码验证，有效防止离开电脑时被熟人窥屏。
               </div>
             )}
 

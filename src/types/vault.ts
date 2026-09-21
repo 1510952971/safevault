@@ -1,5 +1,5 @@
 /**
- * 个人私密密码管理库 SafeVault 类型定义契约
+ * 个人私密密码数据库 SafeVault 类型定义契约
  * 严格遵照 SPEC.md 与 code-guardian 强类型规范
  */
 

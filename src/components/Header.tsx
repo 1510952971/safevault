@@ -80,7 +80,7 @@ export const Header: React.FC<HeaderProps> = ({
         <SafeVaultLogo size={32} className="shrink-0 drop-shadow-xs" />
         <div className="flex items-center gap-2 whitespace-nowrap">
           <h1 className="font-extrabold text-sm sm:text-base tracking-tight text-slate-900 flex items-center gap-1.5 whitespace-nowrap">
-            <span>密码管理库</span>
+            <span>密码数据库</span>
             <span className="text-xs font-mono font-semibold text-slate-400 hidden sm:inline">// SAFEVAULT</span>
           </h1>
           <span className="hidden md:inline-flex items-center gap-1 text-[10px] font-mono uppercase bg-brand-lime/20 text-slate-800 border border-brand-lime/60 px-2 py-0.5 rounded font-semibold whitespace-nowrap">
@@ -266,7 +266,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               onClick={onLockNow}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs transition-all whitespace-nowrap shrink-0"
-              title="立即锁定密码管理库"
+              title="立即锁定密码数据库"
             >
               <Lock className="w-3 h-3 text-brand-lime shrink-0" />
               <span>锁定</span>

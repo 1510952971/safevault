@@ -62,7 +62,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       ...(onOpenChangeMasterPassword ? [{ id: 'act-change-master', label: '修改密码库主密码并全库重加密', icon: <Key className="w-4 h-4 text-teal-500" />, run: onOpenChangeMasterPassword }] : []),
       ...(onOpenEmergencyKit ? [{ id: 'act-emergency-kit', label: '生成打印离线应急救援卡', icon: <FileText className="w-4 h-4 text-indigo-500" />, run: onOpenEmergencyKit }] : []),
       ...(onOpenUpdateModal ? [{ id: 'act-check-update', label: '检查 GitHub 程序版本更新', icon: <Sparkles className="w-4 h-4 text-purple-400" />, run: onOpenUpdateModal }] : []),
-      { id: 'act-lock', label: '立即锁定密码管理库', icon: <Lock className="w-4 h-4 text-rose-500" />, run: onLockNow }
+      { id: 'act-lock', label: '立即锁定密码数据库', icon: <Lock className="w-4 h-4 text-rose-500" />, run: onLockNow }
     ];
 
     if (!query.trim()) return actions;

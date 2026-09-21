@@ -113,7 +113,7 @@ export const App: React.FC = () => {
     setIsSyncModalOpen(false);
     setIsUpdateModalOpen(false);
     pendingSecondaryActionRef.current = null;
-    addToast('info', '密码管理库已安全锁定');
+    addToast('info', '密码数据库已安全锁定');
   }, []);
 
   // 全局快捷键监听 (Ctrl+K / Cmd+K 唤起战术命令中枢)
@@ -181,7 +181,7 @@ export const App: React.FC = () => {
 
       if (remaining <= 0) {
         handleLockNow();
-        addToast('warning', `长时间无操作（已满 ${timeoutMinutes} 分钟），密码管理库已自动锁定保护`);
+        addToast('warning', `长时间无操作（已满 ${timeoutMinutes} 分钟），密码数据库已自动锁定保护`);
       }
     }, 1000);
 
@@ -214,7 +214,7 @@ export const App: React.FC = () => {
     setMasterKey(newKey);
     setItems([]);
     setIsLocked(false);
-    addToast('success', 'SafeVault 密码管理库初始化完成，请妥善保管主密码！');
+    addToast('success', 'SafeVault 密码数据库初始化完成，请妥善保管主密码！');
   };
 
   // 4. 输入主密码解锁
@@ -231,7 +231,7 @@ export const App: React.FC = () => {
         const encryptedItems = loadStoredEncryptedItems();
         const decryptedList = await decryptAllVaultItems(result.masterKey, encryptedItems);
         setItems(decryptedList);
-        addToast('success', '密码管理库解锁成功');
+        addToast('success', '密码数据库解锁成功');
       } catch (err) {
         console.error('解密金库条目异常:', err);
         addToast('error', '部分密码条目解密异常');

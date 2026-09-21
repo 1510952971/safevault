@@ -280,7 +280,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
               ) : isInitialized ? (
                 '解锁终端 // UNLOCK TERMINAL'
               ) : (
-                '立即初始化密码管理库'
+                '立即初始化密码数据库'
               )}
             </div>
           </button>
