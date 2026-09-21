@@ -28,6 +28,8 @@ interface PasswordCardProps {
   indexNumber: string;
   isWeak?: boolean;
   isReused?: boolean;
+  isSecondaryAuthRequired?: boolean;
+  onRequestSecondaryAuth?: (onSuccess: () => void) => void;
   onEdit: (item: DecryptedVaultItem) => void;
   onDelete: (id: string, title: string) => void;
   onToggleFavorite: (id: string) => void;
@@ -50,6 +52,8 @@ export const PasswordCard: React.FC<PasswordCardProps> = ({
   indexNumber,
   isWeak = false,
   isReused = false,
+  isSecondaryAuthRequired = false,
+  onRequestSecondaryAuth,
   onEdit,
   onDelete,
   onToggleFavorite,
@@ -63,6 +67,26 @@ export const PasswordCard: React.FC<PasswordCardProps> = ({
 
   const meta = getCategoryMeta(item.category);
   const strength = calculatePasswordStrength(item.password);
+
+  const handleTogglePassword = () => {
+    if (!showPassword && isSecondaryAuthRequired && onRequestSecondaryAuth) {
+      onRequestSecondaryAuth(() => {
+        setShowPassword(true);
+      });
+    } else {
+      setShowPassword(!showPassword);
+    }
+  };
+
+  const handleCopyPasswordWithAuth = () => {
+    if (isSecondaryAuthRequired && onRequestSecondaryAuth) {
+      onRequestSecondaryAuth(() => {
+        onCopyPassword(item.password);
+      });
+    } else {
+      onCopyPassword(item.password);
+    }
+  };
 
   // TOTP 动态口令轮询刷新
   useEffect(() => {
@@ -222,17 +246,17 @@ export const PasswordCard: React.FC<PasswordCardProps> = ({
             <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
-                onClick={() => setShowPassword(!showPassword)}
+                onClick={handleTogglePassword}
                 className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-white rounded transition-colors"
-                title={showPassword ? '隐藏明文' : '显示明文'}
+                title={showPassword ? '隐藏明文' : '显示明文 (受二级密码保护)'}
               >
                 {showPassword ? <EyeOff className="w-3.5 h-3.5 text-slate-800" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
               <button
                 type="button"
-                onClick={() => onCopyPassword(item.password)}
+                onClick={handleCopyPasswordWithAuth}
                 className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-white rounded transition-colors"
-                title="安全复制密码 (30秒后自动清空剪贴板)"
+                title="安全复制密码 (受二级密码保护，30秒后自动清空剪贴板)"
               >
                 <Copy className="w-3.5 h-3.5" />
               </button>

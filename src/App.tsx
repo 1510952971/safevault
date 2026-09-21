@@ -3,6 +3,8 @@ import { VaultMeta, EncryptedVaultItem, DecryptedVaultItem, ToastNotification, V
 import {
   initializeVaultMeta,
   verifyMasterPassword,
+  setupSecondaryPassword,
+  verifySecondaryPassword,
   encryptVaultItem,
   decryptAllVaultItems
 } from './utils/crypto';
@@ -20,6 +22,7 @@ import { MasterAuthModal } from './components/MasterAuthModal';
 import { PasswordModal } from './components/PasswordModal';
 import { PasswordGeneratorModal } from './components/PasswordGeneratorModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
+import { SecondaryAuthModal, SecondaryAuthModalMode } from './components/SecondaryAuthModal';
 import { Toast } from './components/Toast';
 
 export const App: React.FC = () => {
@@ -35,6 +38,16 @@ export const App: React.FC = () => {
   const [editingItem, setEditingItem] = useState<DecryptedVaultItem | null>(null);
   const [isGeneratorModalOpen, setIsGeneratorModalOpen] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+
+  // 二级密码鉴权状态
+  const [secondaryAuthExpiry, setSecondaryAuthExpiry] = useState<number | null>(null);
+  const [isSecondaryModalOpen, setIsSecondaryModalOpen] = useState(false);
+  const [secondaryModalMode, setSecondaryModalMode] = useState<SecondaryAuthModalMode>('verify');
+  const pendingSecondaryActionRef = useRef<(() => void) | null>(null);
+
+  const isSecondaryAuthorized = Boolean(secondaryAuthExpiry && Date.now() < secondaryAuthExpiry);
+  const hasSecondaryPassword = Boolean(vaultMeta?.hasSecondaryPassword);
+  const isSecondaryAuthRequired = hasSecondaryPassword && !isSecondaryAuthorized;
 
   // 提示信息
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
@@ -71,9 +84,12 @@ export const App: React.FC = () => {
     setMasterKey(null);
     setItems([]);
     setIsLocked(true);
+    setSecondaryAuthExpiry(null);
     setIsPasswordModalOpen(false);
     setIsGeneratorModalOpen(false);
     setIsBackupModalOpen(false);
+    setIsSecondaryModalOpen(false);
+    pendingSecondaryActionRef.current = null;
     addToast('info', '保险箱已安全锁定');
   }, []);
 
@@ -326,7 +342,101 @@ export const App: React.FC = () => {
     setMasterKey(null);
     setItems([]);
     setIsLocked(true);
+    setSecondaryAuthExpiry(null);
     addToast('warning', '金库已清空并恢复出厂状态');
+  };
+
+  // 12. 二级密码验证拦截
+  const handleRequestSecondaryAuth = (onSuccess: () => void) => {
+    pendingSecondaryActionRef.current = onSuccess;
+    setSecondaryModalMode('verify');
+    setIsSecondaryModalOpen(true);
+  };
+
+  // 13. 二级密码核验
+  const handleVerifySecondaryPassword = async (
+    inputPass: string,
+    rememberFiveMinutes: boolean
+  ): Promise<boolean> => {
+    if (!vaultMeta) return false;
+    const ok = await verifySecondaryPassword(inputPass, vaultMeta);
+    if (ok) {
+      if (rememberFiveMinutes) {
+        setSecondaryAuthExpiry(Date.now() + 5 * 60 * 1000);
+      }
+      addToast('success', '二级安全密码核验通过');
+      const action = pendingSecondaryActionRef.current;
+      pendingSecondaryActionRef.current = null;
+      action?.();
+      return true;
+    }
+    return false;
+  };
+
+  // 14. 开启/设置二级密码
+  const handleSetupSecondaryPassword = async (newPassword: string) => {
+    if (!vaultMeta) return;
+    const secData = await setupSecondaryPassword(newPassword);
+    const updatedMeta: VaultMeta = {
+      ...vaultMeta,
+      hasSecondaryPassword: true,
+      secondarySalt: secData.secondarySalt,
+      secondaryTestCipher: secData.secondaryTestCipher,
+      secondaryTestIv: secData.secondaryTestIv,
+      updatedAt: new Date().toISOString()
+    };
+    saveStoredVaultMeta(updatedMeta);
+    setVaultMeta(updatedMeta);
+    setSecondaryAuthExpiry(Date.now() + 5 * 60 * 1000);
+    addToast('success', '二级安全密码已开启！查看与复制明文受二次保护');
+  };
+
+  // 15. 停用二级密码
+  const handleDisableSecondaryPassword = async (currentPass: string): Promise<boolean> => {
+    if (!vaultMeta) return false;
+    const ok = await verifySecondaryPassword(currentPass, vaultMeta);
+    if (ok) {
+      const updatedMeta: VaultMeta = {
+        ...vaultMeta,
+        hasSecondaryPassword: false,
+        secondarySalt: undefined,
+        secondaryTestCipher: undefined,
+        secondaryTestIv: undefined,
+        updatedAt: new Date().toISOString()
+      };
+      saveStoredVaultMeta(updatedMeta);
+      setVaultMeta(updatedMeta);
+      setSecondaryAuthExpiry(null);
+      addToast('info', '已停用二级安全密码');
+      return true;
+    }
+    return false;
+  };
+
+  // 16. 修改二级密码
+  const handleChangeSecondaryPassword = async (
+    oldPass: string,
+    newPass: string
+  ): Promise<boolean> => {
+    if (!vaultMeta) return false;
+    const ok = await verifySecondaryPassword(oldPass, vaultMeta);
+    if (ok) {
+      const secData = await setupSecondaryPassword(newPass);
+      const updatedMeta: VaultMeta = {
+        ...vaultMeta,
+        hasSecondaryPassword: true,
+        secondarySalt: secData.secondarySalt,
+        secondaryTestCipher: secData.secondaryTestCipher,
+        secondaryTestIv: secData.secondaryTestIv,
+        updatedAt: new Date().toISOString()
+      };
+      saveStoredVaultMeta(updatedMeta);
+      setVaultMeta(updatedMeta);
+      setSecondaryAuthExpiry(Date.now() + 5 * 60 * 1000);
+      addToast('success', '二级安全密码已成功修改');
+      return true;
+    }
+    return false;
   };
 
   return (
@@ -337,6 +447,12 @@ export const App: React.FC = () => {
         totalItems={items.length}
         remainingLockSeconds={remainingLockSeconds}
         lockTimeoutMinutes={vaultMeta?.lockTimeoutMinutes || 3}
+        hasSecondaryPassword={hasSecondaryPassword}
+        isSecondaryAuthorized={isSecondaryAuthorized}
+        onOpenSecondaryPasswordModal={() => {
+          setSecondaryModalMode('setup');
+          setIsSecondaryModalOpen(true);
+        }}
         onChangeLockTimeout={handleChangeLockTimeout}
         onLockNow={handleLockNow}
         onOpenGenerator={() => setIsGeneratorModalOpen(true)}
@@ -361,6 +477,14 @@ export const App: React.FC = () => {
             isLoading={isLoading}
             remainingLockSeconds={remainingLockSeconds}
             lockTimeoutMinutes={vaultMeta?.lockTimeoutMinutes || 3}
+            hasSecondaryPassword={hasSecondaryPassword}
+            isSecondaryAuthorized={isSecondaryAuthorized}
+            isSecondaryAuthRequired={isSecondaryAuthRequired}
+            onRequestSecondaryAuth={handleRequestSecondaryAuth}
+            onOpenSecondaryPasswordModal={() => {
+              setSecondaryModalMode('setup');
+              setIsSecondaryModalOpen(true);
+            }}
             onChangeLockTimeout={handleChangeLockTimeout}
             onAddNew={() => {
               setEditingItem(null);
@@ -407,6 +531,21 @@ export const App: React.FC = () => {
         onRestoreSuccess={handleRestoreSuccess}
         onBatchImportCsv={handleBatchImportCsv}
         onResetVaultConfirm={handleResetVault}
+      />
+
+      {/* 二级安全密码核验与设置弹窗 */}
+      <SecondaryAuthModal
+        isOpen={isSecondaryModalOpen}
+        mode={secondaryModalMode}
+        hasSecondaryPassword={hasSecondaryPassword}
+        onClose={() => {
+          setIsSecondaryModalOpen(false);
+          pendingSecondaryActionRef.current = null;
+        }}
+        onVerify={handleVerifySecondaryPassword}
+        onSetupSuccess={handleSetupSecondaryPassword}
+        onDisableSuccess={handleDisableSecondaryPassword}
+        onChangePasswordSuccess={handleChangeSecondaryPassword}
       />
 
       {/* 浮动轻量 Toast 提示 */}

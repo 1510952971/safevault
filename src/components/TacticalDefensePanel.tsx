@@ -1,11 +1,14 @@
 import React from 'react';
-import { Clock, Cpu, AlertTriangle, ShieldCheck, CopyCheck } from 'lucide-react';
+import { Clock, Cpu, AlertTriangle, ShieldCheck, CopyCheck, KeyRound } from 'lucide-react';
 
 interface TacticalDefensePanelProps {
   weakCount: number;
   reusedCount: number;
   remainingLockSeconds: number;
   lockTimeoutMinutes: number;
+  hasSecondaryPassword: boolean;
+  isSecondaryAuthorized: boolean;
+  onOpenSecondaryPasswordModal: () => void;
   onChangeLockTimeout: (mins: number) => void;
   onOpenGenerator: () => void;
   onOpenBackup: () => void;
@@ -17,6 +20,9 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
   reusedCount,
   remainingLockSeconds,
   lockTimeoutMinutes,
+  hasSecondaryPassword,
+  isSecondaryAuthorized,
+  onOpenSecondaryPasswordModal,
   onChangeLockTimeout,
   onOpenGenerator,
   onOpenBackup,
@@ -41,7 +47,7 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
 
         {/* 核心安全指标列表 */}
         <div className="space-y-3 divide-y divide-slate-100 text-xs">
-          {/* 超时自动锁屏 (实时倒计时与可配置) */}
+          {/* 超时自动锁屏 */}
           <div className="flex items-center justify-between pt-1">
             <div className="flex items-center gap-2 text-slate-600">
               <Clock className="w-4 h-4 text-slate-400" />
@@ -65,6 +71,26 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
                 <option value={30}>30分钟</option>
               </select>
             </div>
+          </div>
+
+          {/* 二级独立密码查看防护 */}
+          <div className="flex items-center justify-between pt-2.5">
+            <div className="flex items-center gap-2 text-slate-600">
+              <KeyRound className="w-4 h-4 text-slate-400" />
+              <span>二级查看密码</span>
+            </div>
+            <button
+              onClick={onOpenSecondaryPasswordModal}
+              className={`font-mono font-bold text-[11px] px-2 py-0.5 rounded border transition-colors ${
+                hasSecondaryPassword
+                  ? isSecondaryAuthorized
+                    ? 'text-emerald-700 bg-emerald-50 border-emerald-300'
+                    : 'text-amber-700 bg-amber-50 border-amber-300'
+                  : 'text-slate-600 bg-slate-100 border-slate-200 hover:bg-slate-200'
+              }`}
+            >
+              {hasSecondaryPassword ? (isSecondaryAuthorized ? '已授权查看' : '保护中') : '点击开启'}
+            </button>
           </div>
 
           {/* PBKDF2 算力拉伸 */}
@@ -119,11 +145,26 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
             </button>
           )}
 
+          {/* 设置/管理二级密码按钮 */}
+          <button
+            onClick={onOpenSecondaryPasswordModal}
+            className="w-full relative flex items-center bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded overflow-hidden transition-all group p-0 shadow-sm"
+          >
+            <div className="w-9 h-11 bg-brand-lime flex items-center justify-center font-bold text-slate-900 shrink-0">
+              <span className="text-base font-mono">&gt;</span>
+            </div>
+            <div className="flex-1 px-3 text-left">
+              <span className="text-xs font-bold text-slate-900 group-hover:text-slate-950 block">
+                {hasSecondaryPassword ? '管理二级查看密码' : '开启二级安全密码'}
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono block">TIER-2 PROTECTION</span>
+            </div>
+          </button>
+
           <button
             onClick={onOpenGenerator}
             className="w-full relative flex items-center bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded overflow-hidden transition-all group p-0 shadow-sm"
           >
-            {/* 左侧斜切荧光黄色块 > */}
             <div className="w-9 h-11 bg-brand-lime flex items-center justify-center font-bold text-slate-900 shrink-0">
               <span className="text-base font-mono">&gt;</span>
             </div>
@@ -139,7 +180,6 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
             onClick={onOpenBackup}
             className="w-full relative flex items-center bg-[#161922] hover:bg-slate-800 text-white rounded overflow-hidden transition-all group p-0 shadow-sm"
           >
-            {/* 左侧斜切荧光黄色块 > */}
             <div className="w-9 h-11 bg-brand-lime flex items-center justify-center font-bold text-slate-900 shrink-0">
               <span className="text-base font-mono">&gt;</span>
             </div>

@@ -20,6 +20,10 @@ export interface VaultMeta {
   testCipher: string;          // 验证主密码正确性的特征密文 (AES-GCM 加密已知常量 "SAFEVAULT_TOKEN")
   testIv: string;              // 验证密文的 12 字节随机 IV (Base64)
   lockTimeoutMinutes: number;  // 自动锁屏时长 (默认 3 分钟)
+  hasSecondaryPassword?: boolean;    // 是否开启二级安全密码
+  secondarySalt?: string;            // 二级密码 PBKDF2 独立盐值 (Base64)
+  secondaryTestCipher?: string;      // 二级密码校验密文 (Base64)
+  secondaryTestIv?: string;          // 二级密码校验 IV (Base64)
   createdAt: string;           // ISO 8601 时间戳
   updatedAt: string;           // 最后修改时间戳
 }

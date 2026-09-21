@@ -14,6 +14,11 @@ interface VaultListProps {
   isLoading: boolean;
   remainingLockSeconds: number;
   lockTimeoutMinutes: number;
+  hasSecondaryPassword: boolean;
+  isSecondaryAuthorized: boolean;
+  isSecondaryAuthRequired: boolean;
+  onRequestSecondaryAuth: (onSuccess: () => void) => void;
+  onOpenSecondaryPasswordModal: () => void;
   onChangeLockTimeout: (mins: number) => void;
   onAddNew: () => void;
   onEditItem: (item: DecryptedVaultItem) => void;
@@ -31,6 +36,11 @@ export const VaultList: React.FC<VaultListProps> = ({
   isLoading,
   remainingLockSeconds,
   lockTimeoutMinutes,
+  hasSecondaryPassword,
+  isSecondaryAuthorized,
+  isSecondaryAuthRequired,
+  onRequestSecondaryAuth,
+  onOpenSecondaryPasswordModal,
   onChangeLockTimeout,
   onAddNew,
   onEditItem,
@@ -180,7 +190,13 @@ export const VaultList: React.FC<VaultListProps> = ({
 
               <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                 <button
-                  onClick={() => onCopyPassword(corePinnedItem.password)}
+                  onClick={() => {
+                    if (isSecondaryAuthRequired && onRequestSecondaryAuth) {
+                      onRequestSecondaryAuth(() => onCopyPassword(corePinnedItem.password));
+                    } else {
+                      onCopyPassword(corePinnedItem.password);
+                    }
+                  }}
                   className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded text-xs font-semibold shadow-sm transition-colors"
                 >
                   复制核心密码
@@ -262,6 +278,8 @@ export const VaultList: React.FC<VaultListProps> = ({
                     indexNumber={numStr}
                     isWeak={isWeak}
                     isReused={isReused}
+                    isSecondaryAuthRequired={isSecondaryAuthRequired}
+                    onRequestSecondaryAuth={onRequestSecondaryAuth}
                     onEdit={onEditItem}
                     onDelete={onDeleteItem}
                     onToggleFavorite={onToggleFavorite}
@@ -306,6 +324,9 @@ export const VaultList: React.FC<VaultListProps> = ({
         reusedCount={audit.reusedCount}
         remainingLockSeconds={remainingLockSeconds}
         lockTimeoutMinutes={lockTimeoutMinutes}
+        hasSecondaryPassword={hasSecondaryPassword}
+        isSecondaryAuthorized={isSecondaryAuthorized}
+        onOpenSecondaryPasswordModal={onOpenSecondaryPasswordModal}
         onChangeLockTimeout={onChangeLockTimeout}
         onOpenGenerator={onOpenGenerator}
         onOpenBackup={onOpenBackup}

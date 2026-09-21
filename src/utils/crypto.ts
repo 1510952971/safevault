@@ -144,6 +144,62 @@ export async function verifyMasterPassword(
   }
 }
 
+const SECONDARY_TOKEN_CONST = 'SAFEVAULT_SECONDARY_AUTH_VERIFIED_TOKEN';
+
+/**
+ * 设置/开启二级安全密码：生成独立随机盐值与特征校验密文
+ */
+export async function setupSecondaryPassword(
+  secondaryPassword: string
+): Promise<{ secondarySalt: string; secondaryTestCipher: string; secondaryTestIv: string }> {
+  const salt = window.crypto.getRandomValues(new Uint8Array(16));
+  const key = await deriveKeyFromMasterPassword(secondaryPassword, salt);
+
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const tokenBytes = textEncoder.encode(SECONDARY_TOKEN_CONST);
+  const cipherBuffer = await window.crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    tokenBytes
+  );
+
+  return {
+    secondarySalt: bufferToBase64(salt),
+    secondaryTestCipher: bufferToBase64(new Uint8Array(cipherBuffer)),
+    secondaryTestIv: bufferToBase64(iv)
+  };
+}
+
+/**
+ * 校验二级安全密码是否正确
+ */
+export async function verifySecondaryPassword(
+  secondaryPassword: string,
+  meta: VaultMeta
+): Promise<boolean> {
+  if (!meta.hasSecondaryPassword || !meta.secondarySalt || !meta.secondaryTestCipher || !meta.secondaryTestIv) {
+    return true; // 未启用二级密码时默认无需校验
+  }
+
+  try {
+    const salt = base64ToBuffer(meta.secondarySalt);
+    const testIv = base64ToBuffer(meta.secondaryTestIv);
+    const testCipher = base64ToBuffer(meta.secondaryTestCipher);
+
+    const key = await deriveKeyFromMasterPassword(secondaryPassword, salt);
+    const decryptedBuffer = await window.crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: testIv },
+      key,
+      testCipher
+    );
+
+    const decryptedText = textDecoder.decode(decryptedBuffer);
+    return decryptedText === SECONDARY_TOKEN_CONST;
+  } catch (_err) {
+    return false;
+  }
+}
+
 /**
  * 加密单个密码条目（仅对敏感字段 username, password, notes 进行加密）
  */

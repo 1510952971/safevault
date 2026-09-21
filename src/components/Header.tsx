@@ -1,11 +1,14 @@
 import React from 'react';
-import { ShieldCheck, Lock, Sparkles, DownloadCloud, Terminal, Clock } from 'lucide-react';
+import { ShieldCheck, Lock, Sparkles, DownloadCloud, Terminal, Clock, KeyRound } from 'lucide-react';
 
 interface HeaderProps {
   isLocked: boolean;
   totalItems: number;
   remainingLockSeconds: number;
   lockTimeoutMinutes: number;
+  hasSecondaryPassword: boolean;
+  isSecondaryAuthorized: boolean;
+  onOpenSecondaryPasswordModal: () => void;
   onChangeLockTimeout: (mins: number) => void;
   onLockNow: () => void;
   onOpenGenerator: () => void;
@@ -17,6 +20,9 @@ export const Header: React.FC<HeaderProps> = ({
   totalItems,
   remainingLockSeconds,
   lockTimeoutMinutes,
+  hasSecondaryPassword,
+  isSecondaryAuthorized,
+  onOpenSecondaryPasswordModal,
   onChangeLockTimeout,
   onLockNow,
   onOpenGenerator,
@@ -85,6 +91,25 @@ export const Header: React.FC<HeaderProps> = ({
                   <option value={30}>30分钟</option>
                 </select>
               </div>
+
+              {/* 二级安全密码设置/状态 */}
+              <button
+                onClick={onOpenSecondaryPasswordModal}
+                className={`px-2.5 py-1.5 rounded border text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                  hasSecondaryPassword
+                    ? isSecondaryAuthorized
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : 'bg-amber-50 text-amber-800 border-amber-300'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                }`}
+                title="二级查看安全密码，点击管理"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">
+                  二级密码: {hasSecondaryPassword ? (isSecondaryAuthorized ? '已授权' : '保护中') : '未开启'}
+                </span>
+                <span className="lg:hidden">二级密码</span>
+              </button>
 
               {/* 强密码发生器 */}
               <button
