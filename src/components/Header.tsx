@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Lock, Sparkles, DownloadCloud, Terminal, Clock, KeyRound, Key, FileText } from 'lucide-react';
+import { ShieldCheck, Lock, Sparkles, DownloadCloud, Terminal, Clock, KeyRound, Key, FileText, Cloud, CloudOff, GitBranch } from 'lucide-react';
 
 interface HeaderProps {
   isLocked: boolean;
@@ -8,6 +8,8 @@ interface HeaderProps {
   lockTimeoutMinutes: number;
   hasSecondaryPassword: boolean;
   isSecondaryAuthorized: boolean;
+  isNasConnected?: boolean;
+  nasLastSyncTime?: string | null;
   onOpenSecondaryPasswordModal: () => void;
   onChangeLockTimeout: (mins: number) => void;
   onLockNow: () => void;
@@ -15,6 +17,8 @@ interface HeaderProps {
   onOpenBackup: () => void;
   onOpenChangeMasterPassword?: () => void;
   onOpenEmergencyKit?: () => void;
+  onOpenSyncModal?: () => void;
+  onOpenUpdateModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -24,13 +28,17 @@ export const Header: React.FC<HeaderProps> = ({
   lockTimeoutMinutes,
   hasSecondaryPassword,
   isSecondaryAuthorized,
+  isNasConnected,
+  nasLastSyncTime,
   onOpenSecondaryPasswordModal,
   onChangeLockTimeout,
   onLockNow,
   onOpenGenerator,
   onOpenBackup,
   onOpenChangeMasterPassword,
-  onOpenEmergencyKit
+  onOpenEmergencyKit,
+  onOpenSyncModal,
+  onOpenUpdateModal
 }) => {
   const formatTimer = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -56,6 +64,16 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="w-1.5 h-1.5 rounded-full bg-brand-lime inline-block"></span>
                 ZERO-KNOWLEDGE
               </span>
+              {onOpenUpdateModal && (
+                <button
+                  onClick={onOpenUpdateModal}
+                  className="hidden md:inline-flex items-center gap-1 text-[10px] font-mono bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-1.5 py-0.5 rounded transition-colors font-semibold"
+                  title="检查 GitHub 版本更新"
+                >
+                  <GitBranch className="w-2.5 h-2.5 text-emerald-600" />
+                  <span>v1.1.0</span>
+                </button>
+              )}
             </div>
             <p className="text-[11px] text-slate-400 tracking-wider font-mono hidden sm:block">
               “以算法与秩序，筑牢私密资产的安全中枢。”
@@ -156,6 +174,31 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <FileText className="w-3.5 h-3.5 text-slate-700" />
                   <span className="hidden xl:inline">应急救援单</span>
+                </button>
+              )}
+
+              {/* 极空间 NAS 云同步 */}
+              {onOpenSyncModal && (
+                <button
+                  onClick={onOpenSyncModal}
+                  className={`px-2.5 py-1.5 rounded border text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                    isNasConnected
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                  }`}
+                  title={isNasConnected ? `已连接极空间 NAS (最后同步: ${nasLastSyncTime ? new Date(nasLastSyncTime).toLocaleTimeString() : '刚刚'})` : '极空间 NAS 多端同步中心 (未连接)'}
+                >
+                  {isNasConnected ? (
+                    <>
+                      <Cloud className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+                      <span className="hidden sm:inline font-bold">极空间同步</span>
+                    </>
+                  ) : (
+                    <>
+                      <CloudOff className="w-3.5 h-3.5 text-slate-500" />
+                      <span className="hidden sm:inline">极空间同步</span>
+                    </>
+                  )}
                 </button>
               )}
 

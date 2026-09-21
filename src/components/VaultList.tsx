@@ -34,6 +34,9 @@ interface VaultListProps {
   onOpenBackup: () => void;
   onOpenChangeMasterPassword?: () => void;
   onOpenEmergencyKit?: () => void;
+  isNasConnected?: boolean;
+  onOpenSyncModal?: () => void;
+  onOpenUpdateModal?: () => void;
 }
 
 export const VaultList: React.FC<VaultListProps> = ({
@@ -60,7 +63,10 @@ export const VaultList: React.FC<VaultListProps> = ({
   onOpenGenerator,
   onOpenBackup,
   onOpenChangeMasterPassword,
-  onOpenEmergencyKit
+  onOpenEmergencyKit,
+  isNasConnected,
+  onOpenSyncModal,
+  onOpenUpdateModal
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -394,6 +400,9 @@ export const VaultList: React.FC<VaultListProps> = ({
         onFilterRisky={() => setSelectedCategory('risky')}
         onOpenChangeMasterPassword={onOpenChangeMasterPassword}
         onOpenEmergencyKit={onOpenEmergencyKit}
+        isNasConnected={isNasConnected}
+        onOpenSyncModal={onOpenSyncModal}
+        onOpenUpdateModal={onOpenUpdateModal}
       />
     </div>
   );

@@ -27,6 +27,9 @@ import { SecondaryAuthModal, SecondaryAuthModalMode } from './components/Seconda
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { ChangeMasterPasswordModal } from './components/ChangeMasterPasswordModal';
 import { EmergencyKitModal } from './components/EmergencyKitModal';
+import { SyncAccountModal } from './components/SyncAccountModal';
+import { UpdateCheckModal } from './components/UpdateCheckModal';
+import { loadNasSyncConfig, NasSyncConfig } from './utils/sync';
 import { PrivacyShield } from './components/PrivacyShield';
 import { Toast } from './components/Toast';
 
@@ -47,6 +50,11 @@ export const App: React.FC = () => {
   const [isPrivacyMaskActive, setIsPrivacyMaskActive] = useState(false);
   const [isChangeMasterModalOpen, setIsChangeMasterModalOpen] = useState(false);
   const [isEmergencyKitModalOpen, setIsEmergencyKitModalOpen] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+
+  // 极空间 NAS 配置状态
+  const [nasConfig, setNasConfig] = useState<NasSyncConfig | null>(() => loadNasSyncConfig());
 
   // 二级密码鉴权状态
   const [secondaryAuthExpiry, setSecondaryAuthExpiry] = useState<number | null>(null);
@@ -102,6 +110,8 @@ export const App: React.FC = () => {
     setIsPrivacyMaskActive(false);
     setIsChangeMasterModalOpen(false);
     setIsEmergencyKitModalOpen(false);
+    setIsSyncModalOpen(false);
+    setIsUpdateModalOpen(false);
     pendingSecondaryActionRef.current = null;
     addToast('info', '保险箱已安全锁定');
   }, []);
@@ -614,6 +624,10 @@ export const App: React.FC = () => {
         onOpenBackup={() => setIsBackupModalOpen(true)}
         onOpenChangeMasterPassword={() => setIsChangeMasterModalOpen(true)}
         onOpenEmergencyKit={() => setIsEmergencyKitModalOpen(true)}
+        isNasConnected={Boolean(nasConfig?.token)}
+        nasLastSyncTime={nasConfig?.lastSyncTime}
+        onOpenSyncModal={() => setIsSyncModalOpen(true)}
+        onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
       />
 
       {/* 主体工作台 */}
@@ -665,6 +679,9 @@ export const App: React.FC = () => {
             onOpenBackup={() => setIsBackupModalOpen(true)}
             onOpenChangeMasterPassword={() => setIsChangeMasterModalOpen(true)}
             onOpenEmergencyKit={() => setIsEmergencyKitModalOpen(true)}
+            isNasConnected={Boolean(nasConfig?.token)}
+            onOpenSyncModal={() => setIsSyncModalOpen(true)}
+            onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
           />
         )}
       </main>
@@ -741,6 +758,14 @@ export const App: React.FC = () => {
           setIsCommandPaletteOpen(false);
           setIsEmergencyKitModalOpen(true);
         }}
+        onOpenSyncModal={() => {
+          setIsCommandPaletteOpen(false);
+          setIsSyncModalOpen(true);
+        }}
+        onOpenUpdateModal={() => {
+          setIsCommandPaletteOpen(false);
+          setIsUpdateModalOpen(true);
+        }}
         onLockNow={() => {
           setIsCommandPaletteOpen(false);
           handleLockNow();
@@ -761,6 +786,29 @@ export const App: React.FC = () => {
         onClose={() => setIsEmergencyKitModalOpen(false)}
         vaultMeta={vaultMeta}
         totalItemsCount={items.length}
+      />
+
+      {/* 极空间 NAS 容器化多端同步中心弹窗 */}
+      <SyncAccountModal
+        isOpen={isSyncModalOpen}
+        onClose={() => setIsSyncModalOpen(false)}
+        vaultMeta={vaultMeta}
+        items={items}
+        masterKey={masterKey}
+        onVaultUpdatedFromRemote={(newMeta, newItems) => {
+          setVaultMeta(newMeta);
+          setItems(newItems);
+        }}
+        onSyncStatusChanged={() => {
+          setNasConfig(loadNasSyncConfig());
+        }}
+        addToast={addToast}
+      />
+
+      {/* GitHub 版本更新检测弹窗 */}
+      <UpdateCheckModal
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
       />
 
       {/* 浏览器失焦/切后台高斯模糊防肩窥隐私幕布 */}

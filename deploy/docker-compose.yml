@@ -7,7 +7,11 @@ services:
     container_name: safevault-nas
     restart: unless-stopped
     ports:
-      # NAS 外部映射端口 : 容器内部端口 (可在 NAS 容器管理页面自由调整如 8088:80)
-      - "8088:80"
+      # NAS 外部映射端口 : 容器内部端口 (极空间可自定义端口如 8088:8088)
+      - "8088:8088"
+    volumes:
+      # 持久化数据目录：将极空间 NAS 物理存储目录映射进容器的 /app/data
+      - ../data:/app/data
     environment:
       - TZ=Asia/Shanghai
+      - PORT=8088

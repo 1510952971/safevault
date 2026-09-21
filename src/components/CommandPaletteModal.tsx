@@ -14,6 +14,8 @@ interface CommandPaletteModalProps {
   onLockNow: () => void;
   onOpenChangeMasterPassword?: () => void;
   onOpenEmergencyKit?: () => void;
+  onOpenSyncModal?: () => void;
+  onOpenUpdateModal?: () => void;
 }
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
@@ -27,7 +29,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenBackup,
   onLockNow,
   onOpenChangeMasterPassword,
-  onOpenEmergencyKit
+  onOpenEmergencyKit,
+  onOpenSyncModal,
+  onOpenUpdateModal
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -54,8 +58,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       { id: 'act-new', label: '录入新密码凭据', icon: <Plus className="w-4 h-4 text-brand-lime" />, run: onOpenNew },
       { id: 'act-gen', label: '生成高熵随机密码', icon: <Sparkles className="w-4 h-4 text-amber-500" />, run: onOpenGenerator },
       { id: 'act-backup', label: '导出离线加密备份', icon: <DownloadCloud className="w-4 h-4 text-sky-500" />, run: onOpenBackup },
-      ...(onOpenChangeMasterPassword ? [{ id: 'act-change-master', label: '修改金库主密码并全库重加密', icon: <Key className="w-4 h-4 text-emerald-500" />, run: onOpenChangeMasterPassword }] : []),
+      ...(onOpenSyncModal ? [{ id: 'act-nas-sync', label: '极空间 NAS 容器多端同步设置', icon: <ExternalLink className="w-4 h-4 text-emerald-500" />, run: onOpenSyncModal }] : []),
+      ...(onOpenChangeMasterPassword ? [{ id: 'act-change-master', label: '修改金库主密码并全库重加密', icon: <Key className="w-4 h-4 text-teal-500" />, run: onOpenChangeMasterPassword }] : []),
       ...(onOpenEmergencyKit ? [{ id: 'act-emergency-kit', label: '生成打印离线应急救援卡', icon: <FileText className="w-4 h-4 text-indigo-500" />, run: onOpenEmergencyKit }] : []),
+      ...(onOpenUpdateModal ? [{ id: 'act-check-update', label: '检查 GitHub 程序版本更新', icon: <Sparkles className="w-4 h-4 text-purple-400" />, run: onOpenUpdateModal }] : []),
       { id: 'act-lock', label: '立即锁定凭据管理终端', icon: <Lock className="w-4 h-4 text-rose-500" />, run: onLockNow }
     ];
 

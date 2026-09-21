@@ -8,6 +8,7 @@ interface TacticalDefensePanelProps {
   lockTimeoutMinutes: number;
   hasSecondaryPassword: boolean;
   isSecondaryAuthorized: boolean;
+  isNasConnected?: boolean;
   onOpenSecondaryPasswordModal: () => void;
   onChangeLockTimeout: (mins: number) => void;
   onOpenGenerator: () => void;
@@ -15,6 +16,8 @@ interface TacticalDefensePanelProps {
   onFilterRisky: () => void;
   onOpenChangeMasterPassword?: () => void;
   onOpenEmergencyKit?: () => void;
+  onOpenSyncModal?: () => void;
+  onOpenUpdateModal?: () => void;
 }
 
 export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
@@ -24,13 +27,16 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
   lockTimeoutMinutes,
   hasSecondaryPassword,
   isSecondaryAuthorized,
+  isNasConnected,
   onOpenSecondaryPasswordModal,
   onChangeLockTimeout,
   onOpenGenerator,
   onOpenBackup,
   onFilterRisky,
   onOpenChangeMasterPassword,
-  onOpenEmergencyKit
+  onOpenEmergencyKit,
+  onOpenSyncModal,
+  onOpenUpdateModal
 }) => {
   const hasRisk = weakCount > 0 || reusedCount > 0;
 
@@ -233,6 +239,49 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
               </div>
             </button>
           )}
+
+          {/* 极空间 NAS 容器化多端同步 */}
+          {onOpenSyncModal && (
+            <button
+              onClick={onOpenSyncModal}
+              className="w-full relative flex items-center bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded overflow-hidden transition-all group p-0 shadow-sm"
+            >
+              <div className={`w-9 h-11 flex items-center justify-center font-bold text-slate-900 shrink-0 ${isNasConnected ? 'bg-emerald-400' : 'bg-brand-lime'}`}>
+                <span className="text-base font-mono">&gt;</span>
+              </div>
+              <div className="flex-1 px-3 text-left">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-900 group-hover:text-slate-950 block">
+                    极空间 NAS 多端同步
+                  </span>
+                  {isNasConnected && (
+                    <span className="text-[9px] font-mono text-emerald-600 bg-emerald-50 px-1 rounded font-bold border border-emerald-200">
+                      联机
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] text-slate-400 font-mono block">ZSPACE DOCKER SYNC</span>
+              </div>
+            </button>
+          )}
+
+          {/* 检查 GitHub 版本更新 */}
+          {onOpenUpdateModal && (
+            <button
+              onClick={onOpenUpdateModal}
+              className="w-full relative flex items-center bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded overflow-hidden transition-all group p-0 shadow-sm"
+            >
+              <div className="w-9 h-11 bg-slate-800 flex items-center justify-center font-bold text-brand-lime shrink-0">
+                <span className="text-base font-mono">&gt;</span>
+              </div>
+              <div className="flex-1 px-3 text-left">
+                <span className="text-xs font-bold text-slate-900 group-hover:text-slate-950 block">
+                  检查 GitHub 新版本
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono block">CHECK RELEASES // v1.1.0</span>
+              </div>
+            </button>
+          )}
         </div>
       </div>
 
@@ -242,7 +291,7 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
           “ 以算法与秩序，筑牢私密资产的安全中枢。 ”
         </p>
         <span className="text-[9px] font-mono text-slate-300 block mt-1 tracking-wider">
-          SAFEVAULT TACTICAL OS v1.0
+          SAFEVAULT TACTICAL OS v1.1 // MULTI-PLATFORM
         </span>
       </div>
     </aside>

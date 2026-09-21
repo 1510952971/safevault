@@ -1,14 +1,15 @@
 {
   "name": "safevault",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "private": true,
-  "description": "零知识强加密个人密码保险箱小程序",
+  "description": "零知识强加密个人密码保险箱小程序 (支持极空间NAS私有化部署、多端同步与GitHub更新)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/test-crypto.js && node tests/test-audit-totp.js && node tests/test-secondary-auth.js && node tests/test-advanced-features.js",
+    "server": "node server/index.js",
+    "test": "node tests/test-crypto.js && node tests/test-audit-totp.js && node tests/test-secondary-auth.js && node tests/test-advanced-features.js && node tests/test-sync-protocol.js",
     "docs:build": "python docs/generate_design_doc.py"
   },
   "dependencies": {
