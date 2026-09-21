@@ -7,7 +7,7 @@ function createWindow() {
     height: 820,
     minWidth: 960,
     minHeight: 680,
-    title: 'SafeVault 个人密码保险箱 // 终端 #0027',
+    title: 'SafeVault 密码管理库 // 终端 #0027',
     backgroundColor: '#0f172a',
     webPreferences: {
       nodeIntegration: false,

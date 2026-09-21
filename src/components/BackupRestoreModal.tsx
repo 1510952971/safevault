@@ -53,7 +53,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
 
   const handleExportCsv = () => {
     if (items.length === 0) {
-      alert('当前保险箱无任何凭据，无需导出 CSV');
+      alert('当前密码管理库无任何凭据，无需导出 CSV');
       return;
     }
     if (onVerifyMasterPassword) {
@@ -139,7 +139,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
         throw new Error('未在 CSV 文件中识别到有效密码行');
       }
 
-      if (window.confirm(`解析成功！共识别到 ${imported.length} 条账号密码凭据，是否确认全部加密导入金库？`)) {
+      if (window.confirm(`解析成功！共识别到 ${imported.length} 条账号密码凭据，是否确认全部加密导入密码管理库？`)) {
         await onBatchImportCsv(imported);
         onClose();
       }

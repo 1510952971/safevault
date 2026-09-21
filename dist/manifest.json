@@ -1,7 +1,7 @@
 {
-  "name": "SafeVault 密码保险箱",
-  "short_name": "SafeVault",
-  "description": "个人私密零知识高强度密码管理小程序",
+  "name": "SafeVault 密码管理库",
+  "short_name": "密码管理库",
+  "description": "个人私密零知识高强度密码管理库",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#0f172a",
