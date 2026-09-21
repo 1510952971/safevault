@@ -55,19 +55,20 @@ export function saveNasSyncConfig(config: NasSyncConfig | null): void {
  */
 export function normalizeServerUrl(rawUrl?: string): string {
   if (!rawUrl || !rawUrl.trim()) {
-    if (typeof window !== 'undefined' && window.location && window.location.origin) {
-      return window.location.origin;
-    }
     return '';
   }
   let url = rawUrl.trim();
   if (url.startsWith('/')) {
-    if (typeof window !== 'undefined' && window.location && window.location.origin) {
-      return window.location.origin;
+    return '';
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    if (url === window.location.origin || url === window.location.host) {
+      return '';
     }
   }
   if (!/^https?:\/\//i.test(url)) {
-    url = `http://${url}`;
+    const protocol = (typeof window !== 'undefined' && window.location?.protocol) || 'http:';
+    url = `${protocol}//${url}`;
   }
   return url.replace(/\/+$/, '');
 }

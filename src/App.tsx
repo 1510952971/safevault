@@ -100,6 +100,8 @@ export const App: React.FC = () => {
     if (cfg?.username) {
       setCurrentAccount(cfg.username);
       setNasConfig(cfg);
+    } else if (storedMeta) {
+      setCurrentAccount('本地金库');
     }
     if (storedMeta) {
       setVaultMeta(storedMeta);
@@ -224,7 +226,11 @@ export const App: React.FC = () => {
   };
 
   // 3. 账号登录制：登录已有极空间账号并拉取对应数据库 (自动相对路径，网址变动 0 影响)
-  const handleLogin = async (username: string, masterPassword: string, customServerUrl?: string): Promise<boolean> => {
+  const handleLogin = async (
+    username: string,
+    masterPassword: string,
+    customServerUrl?: string
+  ): Promise<{ success: boolean; message?: string }> => {
     try {
       setIsLoading(true);
       const cleanUrl = normalizeServerUrl(customServerUrl);
@@ -233,15 +239,17 @@ export const App: React.FC = () => {
       // 1. 调用极空间登录 API (通过零知识 AuthHash，主密码绝不上云)
       const loginRes = await loginNasAccount(cleanUrl, cleanUser, masterPassword);
       if (!loginRes.success || !loginRes.token || !loginRes.salt) {
-        addToast('error', loginRes.message || '登录失败：账号或主密码不匹配');
-        return false;
+        const msg = loginRes.message || '登录失败：账号或主密码不匹配';
+        addToast('error', msg);
+        return { success: false, message: msg };
       }
 
       // 2. 拉取该账号在极空间的专属云端金库
       const pullRes = await pullVaultFromNas(cleanUrl, loginRes.token);
       if (!pullRes.success) {
-        addToast('error', pullRes.message || '拉取云端密码库失败');
-        return false;
+        const msg = pullRes.message || '拉取云端密码库失败';
+        addToast('error', msg);
+        return { success: false, message: msg };
       }
 
       let effectiveMeta: VaultMeta;
@@ -252,20 +260,42 @@ export const App: React.FC = () => {
         // 云端已有加密库，使用主密码核验并解密
         const verifyRes = await verifyMasterPassword(masterPassword, pullRes.vaultMeta);
         if (!verifyRes.success || !verifyRes.masterKey) {
-          addToast('error', '主密码错误：无法解密该账号的云端金库，请核对主密码');
-          return false;
+          const msg = '主密码错误：无法解密该账号的云端金库，请核对主密码';
+          addToast('error', msg);
+          return { success: false, message: msg };
         }
         derivedKey = verifyRes.masterKey;
         effectiveMeta = pullRes.vaultMeta;
         const encryptedItems = pullRes.encryptedItems || [];
         decryptedList = await decryptAllVaultItems(derivedKey, encryptedItems);
       } else {
-        // 该账号为新账号，在客户端本地初始化空金库并推送上云
-        const initRes = await initializeVaultMeta(masterPassword);
-        effectiveMeta = initRes.meta;
-        derivedKey = initRes.masterKey;
-        decryptedList = [];
-        await pushVaultToNas(cleanUrl, loginRes.token, effectiveMeta, [], getDeviceIdentifier());
+        // 该账号在云端为空，检查本地是否有已有数据可迁移
+        const existingStoredMeta = loadStoredVaultMeta();
+        const existingEncryptedItems = loadStoredEncryptedItems();
+        if (existingStoredMeta && existingEncryptedItems.length > 0) {
+          const verifyRes = await verifyMasterPassword(masterPassword, existingStoredMeta);
+          if (verifyRes.success && verifyRes.masterKey) {
+            effectiveMeta = existingStoredMeta;
+            derivedKey = verifyRes.masterKey;
+            decryptedList = await decryptAllVaultItems(derivedKey, existingEncryptedItems);
+          } else {
+            const initRes = await initializeVaultMeta(masterPassword);
+            effectiveMeta = initRes.meta;
+            derivedKey = initRes.masterKey;
+            decryptedList = [];
+          }
+        } else {
+          const initRes = await initializeVaultMeta(masterPassword);
+          effectiveMeta = initRes.meta;
+          derivedKey = initRes.masterKey;
+          decryptedList = [];
+        }
+
+        const encList = [];
+        for (const it of decryptedList) {
+          encList.push(await encryptVaultItem(derivedKey, it, it.id));
+        }
+        await pushVaultToNas(cleanUrl, loginRes.token, effectiveMeta, encList, getDeviceIdentifier());
       }
 
       // 3. 持久化到本地存储
@@ -294,17 +324,22 @@ export const App: React.FC = () => {
       setIsLocked(false);
 
       addToast('success', `欢迎回来，${cleanUser}！已进入您的密码数据库 (${decryptedList.length}项)`);
-      return true;
+      return { success: true };
     } catch (err: unknown) {
-      addToast('error', err instanceof Error ? err.message : '登录过程发生异常');
-      return false;
+      const msg = err instanceof Error ? err.message : '登录过程发生异常';
+      addToast('error', msg);
+      return { success: false, message: msg };
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 3.2 账号登录制：注册新账号并初始化专属云端数据库
-  const handleRegister = async (username: string, masterPassword: string, customServerUrl?: string): Promise<boolean> => {
+  // 3.2 账号登录制：注册新账号并初始化专属云端数据库 (平滑迁移本地已有数据)
+  const handleRegister = async (
+    username: string,
+    masterPassword: string,
+    customServerUrl?: string
+  ): Promise<{ success: boolean; message?: string }> => {
     try {
       setIsLoading(true);
       const cleanUrl = normalizeServerUrl(customServerUrl);
@@ -313,18 +348,42 @@ export const App: React.FC = () => {
       // 1. 注册极空间账号
       const regRes = await registerNasAccount(cleanUrl, cleanUser, masterPassword);
       if (!regRes.success || !regRes.token || !regRes.salt) {
-        addToast('error', regRes.message || '注册失败');
-        return false;
+        const msg = regRes.message || '注册失败';
+        addToast('error', msg);
+        return { success: false, message: msg };
       }
 
-      // 2. 本地初始化加密元数据与 AES 主密钥
-      const { meta, masterKey: newKey } = await initializeVaultMeta(masterPassword);
+      // 检查当前设备本地是否已有旧数据（平滑迁移，绝不丢数据）
+      const existingStoredMeta = loadStoredVaultMeta();
+      const existingEncryptedItems = loadStoredEncryptedItems();
+      let metaToUse: VaultMeta;
+      let masterKeyToUse: CryptoKey;
+      let initialItems: DecryptedVaultItem[] = [];
+      let initialEncrypted: EncryptedVaultItem[] = [];
+
+      if (existingStoredMeta && existingEncryptedItems.length > 0) {
+        const verifyRes = await verifyMasterPassword(masterPassword, existingStoredMeta);
+        if (verifyRes.success && verifyRes.masterKey) {
+          metaToUse = existingStoredMeta;
+          masterKeyToUse = verifyRes.masterKey;
+          initialItems = await decryptAllVaultItems(masterKeyToUse, existingEncryptedItems);
+          initialEncrypted = existingEncryptedItems;
+        } else {
+          const initRes = await initializeVaultMeta(masterPassword);
+          metaToUse = initRes.meta;
+          masterKeyToUse = initRes.masterKey;
+        }
+      } else {
+        const initRes = await initializeVaultMeta(masterPassword);
+        metaToUse = initRes.meta;
+        masterKeyToUse = initRes.masterKey;
+      }
 
       // 3. 推送初始元数据上云开户
-      await pushVaultToNas(cleanUrl, regRes.token, meta, [], getDeviceIdentifier());
+      await pushVaultToNas(cleanUrl, regRes.token, metaToUse, initialEncrypted, getDeviceIdentifier());
 
-      saveStoredVaultMeta(meta);
-      saveStoredEncryptedItems([]);
+      saveStoredVaultMeta(metaToUse);
+      saveStoredEncryptedItems(initialEncrypted);
 
       const newCfg: NasSyncConfig = {
         serverUrl: cleanUrl,
@@ -338,16 +397,17 @@ export const App: React.FC = () => {
       setNasConfig(newCfg);
       setCurrentAccount(cleanUser);
 
-      setVaultMeta(meta);
-      setMasterKey(newKey);
-      setItems([]);
+      setVaultMeta(metaToUse);
+      setMasterKey(masterKeyToUse);
+      setItems(initialItems);
       setIsLocked(false);
 
       addToast('success', `极空间账号 [${cleanUser}] 注册成功！已为您建立专属加密金库。`);
-      return true;
+      return { success: true };
     } catch (err: unknown) {
-      addToast('error', err instanceof Error ? err.message : '注册过程发生异常');
-      return false;
+      const msg = err instanceof Error ? err.message : '注册过程发生异常';
+      addToast('error', msg);
+      return { success: false, message: msg };
     } finally {
       setIsLoading(false);
     }

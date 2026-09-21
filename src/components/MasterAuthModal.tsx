@@ -25,8 +25,8 @@ import { normalizeServerUrl } from '../utils/sync';
 export interface MasterAuthModalProps {
   isInitialized: boolean;
   currentAccount: string | null;
-  onLogin: (username: string, masterPassword: string, customServerUrl?: string) => Promise<boolean>;
-  onRegister: (username: string, masterPassword: string, customServerUrl?: string) => Promise<boolean>;
+  onLogin: (username: string, masterPassword: string, customServerUrl?: string) => Promise<{ success: boolean; message?: string } | boolean>;
+  onRegister: (username: string, masterPassword: string, customServerUrl?: string) => Promise<{ success: boolean; message?: string } | boolean>;
   onUnlock: (password: string) => Promise<boolean>;
   onLogout: () => void;
   onOpenRestore: () => void;
