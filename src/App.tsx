@@ -33,8 +33,12 @@ import {
   loadNasSyncConfig,
   saveNasSyncConfig,
   loginNasAccount,
+  registerNasAccount,
   pullVaultFromNas,
+  pushVaultToNas,
   normalizeServerUrl,
+  getDeviceIdentifier,
+  mergeVaultItems,
   NasSyncConfig
 } from './utils/sync';
 import { PrivacyShield } from './components/PrivacyShield';
@@ -60,8 +64,9 @@ export const App: React.FC = () => {
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
 
-  // 极空间 NAS 配置状态
+  // 极空间 NAS 配置与账号登录状态
   const [nasConfig, setNasConfig] = useState<NasSyncConfig | null>(() => loadNasSyncConfig());
+  const [currentAccount, setCurrentAccount] = useState<string | null>(() => loadNasSyncConfig()?.username || null);
 
   // 二级密码鉴权状态
   const [secondaryAuthExpiry, setSecondaryAuthExpiry] = useState<number | null>(null);
@@ -88,15 +93,20 @@ export const App: React.FC = () => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // 1. 初始化检查本地存储是否存在金库
+  // 1. 初始化检查本地存储与账号凭证
   useEffect(() => {
+    const cfg = loadNasSyncConfig();
     const storedMeta = loadStoredVaultMeta();
+    if (cfg?.username) {
+      setCurrentAccount(cfg.username);
+      setNasConfig(cfg);
+    }
     if (storedMeta) {
       setVaultMeta(storedMeta);
       setIsLocked(true);
     } else {
       setVaultMeta(null);
-      setIsLocked(true); // 首次进入需要创建
+      setIsLocked(true);
     }
   }, []);
 
@@ -213,51 +223,62 @@ export const App: React.FC = () => {
     addToast('info', `已将自动锁屏时长设置为 ${minutes} 分钟`);
   };
 
-  // 3. 首次创建主密码初始化
-  const handleInitialize = async (masterPassword: string) => {
-    const { meta, masterKey: newKey } = await initializeVaultMeta(masterPassword);
-    saveStoredVaultMeta(meta);
-    setVaultMeta(meta);
-    setMasterKey(newKey);
-    setItems([]);
-    setIsLocked(false);
-    addToast('success', 'SafeVault 密码数据库初始化完成，请妥善保管主密码！');
-  };
-
-  // 3.5 从极空间云端载入并恢复已有金库 (无缝应对极空间远程域名变动或新设备接入)
-  const handleLoadFromNas = async (serverUrl: string, username: string, masterPassword: string): Promise<boolean> => {
+  // 3. 账号登录制：登录已有极空间账号并拉取对应数据库 (自动相对路径，网址变动 0 影响)
+  const handleLogin = async (username: string, masterPassword: string, customServerUrl?: string): Promise<boolean> => {
     try {
       setIsLoading(true);
-      const cleanUrl = normalizeServerUrl(serverUrl);
-      const loginRes = await loginNasAccount(cleanUrl, username, masterPassword);
+      const cleanUrl = normalizeServerUrl(customServerUrl);
+      const cleanUser = username.trim().toLowerCase();
+
+      // 1. 调用极空间登录 API (通过零知识 AuthHash，主密码绝不上云)
+      const loginRes = await loginNasAccount(cleanUrl, cleanUser, masterPassword);
       if (!loginRes.success || !loginRes.token || !loginRes.salt) {
-        addToast('error', loginRes.message || '极空间登录鉴权失败，请检查网址、账号或主密码');
+        addToast('error', loginRes.message || '登录失败：账号或主密码不匹配');
         return false;
       }
 
+      // 2. 拉取该账号在极空间的专属云端金库
       const pullRes = await pullVaultFromNas(cleanUrl, loginRes.token);
-      if (!pullRes.success || !pullRes.vaultMeta) {
-        addToast('error', pullRes.message || '从极空间拉取加密金库失败');
+      if (!pullRes.success) {
+        addToast('error', pullRes.message || '拉取云端密码库失败');
         return false;
       }
 
-      // 使用主密码校验并解密拉取的元信息
-      const verifyRes = await verifyMasterPassword(masterPassword, pullRes.vaultMeta);
-      if (!verifyRes.success || !verifyRes.masterKey) {
-        addToast('error', '主密码错误：无法解密该极空间金库，请检查是否与创建时的主密码一致');
-        return false;
+      let effectiveMeta: VaultMeta;
+      let decryptedList: DecryptedVaultItem[] = [];
+      let derivedKey: CryptoKey;
+
+      if (pullRes.vaultMeta && pullRes.vaultMeta.testCipher) {
+        // 云端已有加密库，使用主密码核验并解密
+        const verifyRes = await verifyMasterPassword(masterPassword, pullRes.vaultMeta);
+        if (!verifyRes.success || !verifyRes.masterKey) {
+          addToast('error', '主密码错误：无法解密该账号的云端金库，请核对主密码');
+          return false;
+        }
+        derivedKey = verifyRes.masterKey;
+        effectiveMeta = pullRes.vaultMeta;
+        const encryptedItems = pullRes.encryptedItems || [];
+        decryptedList = await decryptAllVaultItems(derivedKey, encryptedItems);
+      } else {
+        // 该账号为新账号，在客户端本地初始化空金库并推送上云
+        const initRes = await initializeVaultMeta(masterPassword);
+        effectiveMeta = initRes.meta;
+        derivedKey = initRes.masterKey;
+        decryptedList = [];
+        await pushVaultToNas(cleanUrl, loginRes.token, effectiveMeta, [], getDeviceIdentifier());
       }
 
-      const encryptedItems = pullRes.encryptedItems || [];
-      const decryptedList = await decryptAllVaultItems(verifyRes.masterKey, encryptedItems);
-
-      // 持久化到当前域名/浏览器环境
-      saveStoredVaultMeta(pullRes.vaultMeta);
-      saveStoredEncryptedItems(encryptedItems);
+      // 3. 持久化到本地存储
+      saveStoredVaultMeta(effectiveMeta);
+      const encList = [];
+      for (const it of decryptedList) {
+        encList.push(await encryptVaultItem(derivedKey, it, it.id));
+      }
+      saveStoredEncryptedItems(encList);
 
       const newCfg: NasSyncConfig = {
         serverUrl: cleanUrl,
-        username: username.trim().toLowerCase(),
+        username: cleanUser,
         token: loginRes.token,
         salt: loginRes.salt,
         lastSyncTime: pullRes.updatedAt || new Date().toISOString(),
@@ -265,20 +286,129 @@ export const App: React.FC = () => {
       };
       saveNasSyncConfig(newCfg);
       setNasConfig(newCfg);
+      setCurrentAccount(cleanUser);
 
-      setVaultMeta(pullRes.vaultMeta);
-      setMasterKey(verifyRes.masterKey);
+      setVaultMeta(effectiveMeta);
+      setMasterKey(derivedKey);
       setItems(decryptedList);
       setIsLocked(false);
 
-      addToast('success', `成功接入极空间！已安全同步并还原 ${decryptedList.length} 条加密凭据！`);
+      addToast('success', `欢迎回来，${cleanUser}！已进入您的密码数据库 (${decryptedList.length}项)`);
       return true;
     } catch (err: unknown) {
-      addToast('error', err instanceof Error ? err.message : '连接极空间服务发生异常');
+      addToast('error', err instanceof Error ? err.message : '登录过程发生异常');
       return false;
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // 3.2 账号登录制：注册新账号并初始化专属云端数据库
+  const handleRegister = async (username: string, masterPassword: string, customServerUrl?: string): Promise<boolean> => {
+    try {
+      setIsLoading(true);
+      const cleanUrl = normalizeServerUrl(customServerUrl);
+      const cleanUser = username.trim().toLowerCase();
+
+      // 1. 注册极空间账号
+      const regRes = await registerNasAccount(cleanUrl, cleanUser, masterPassword);
+      if (!regRes.success || !regRes.token || !regRes.salt) {
+        addToast('error', regRes.message || '注册失败');
+        return false;
+      }
+
+      // 2. 本地初始化加密元数据与 AES 主密钥
+      const { meta, masterKey: newKey } = await initializeVaultMeta(masterPassword);
+
+      // 3. 推送初始元数据上云开户
+      await pushVaultToNas(cleanUrl, regRes.token, meta, [], getDeviceIdentifier());
+
+      saveStoredVaultMeta(meta);
+      saveStoredEncryptedItems([]);
+
+      const newCfg: NasSyncConfig = {
+        serverUrl: cleanUrl,
+        username: cleanUser,
+        token: regRes.token,
+        salt: regRes.salt,
+        lastSyncTime: new Date().toISOString(),
+        autoSync: true
+      };
+      saveNasSyncConfig(newCfg);
+      setNasConfig(newCfg);
+      setCurrentAccount(cleanUser);
+
+      setVaultMeta(meta);
+      setMasterKey(newKey);
+      setItems([]);
+      setIsLocked(false);
+
+      addToast('success', `极空间账号 [${cleanUser}] 注册成功！已为您建立专属加密金库。`);
+      return true;
+    } catch (err: unknown) {
+      addToast('error', err instanceof Error ? err.message : '注册过程发生异常');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 3.3 彻底退出当前账号 (返回登录界面，可切换其他账号)
+  const handleLogout = useCallback(() => {
+    setMasterKey(null);
+    setItems([]);
+    setIsLocked(true);
+    setSecondaryAuthExpiry(null);
+    setIsPasswordModalOpen(false);
+    setIsGeneratorModalOpen(false);
+    setIsBackupModalOpen(false);
+    setIsSecondaryModalOpen(false);
+    setIsCommandPaletteOpen(false);
+    setIsPrivacyMaskActive(false);
+    setIsChangeMasterModalOpen(false);
+    setIsEmergencyKitModalOpen(false);
+    setIsSyncModalOpen(false);
+    setIsUpdateModalOpen(false);
+
+    // 清除会话
+    saveNasSyncConfig(null);
+    setNasConfig(null);
+    setCurrentAccount(null);
+    setVaultMeta(null);
+
+    addToast('info', '已安全退出当前账号，已返回登录中心');
+  }, []);
+
+  // 3.4 密码项任何增删改时，后台自动静默推送至极空间云端 (实时防丢)
+  const autoPushToNas = useCallback(async (meta: VaultMeta, currentItems: DecryptedVaultItem[], key: CryptoKey) => {
+    const cfg = loadNasSyncConfig();
+    if (!cfg?.token) return;
+    try {
+      const encrypted = [];
+      for (const it of currentItems) {
+        encrypted.push(await encryptVaultItem(key, it, it.id));
+      }
+      const res = await pushVaultToNas(cfg.serverUrl, cfg.token, meta, encrypted, getDeviceIdentifier());
+      if (res.success) {
+        const updatedCfg = { ...cfg, lastSyncTime: res.updatedAt || new Date().toISOString() };
+        saveNasSyncConfig(updatedCfg);
+        setNasConfig(updatedCfg);
+      }
+    } catch (e) {
+      console.warn('[AutoSync] 自动静默同步至极空间后台异常:', e);
+    }
+  }, []);
+
+  // 3.5 离线单机主密码初始化 (备选)
+  const handleInitialize = async (masterPassword: string) => {
+    const { meta, masterKey: newKey } = await initializeVaultMeta(masterPassword);
+    saveStoredVaultMeta(meta);
+    setVaultMeta(meta);
+    setMasterKey(newKey);
+    setItems([]);
+    setCurrentAccount('离线单机库');
+    setIsLocked(false);
+    addToast('success', '密码数据库离线单机模式初始化完成！');
   };
 
   // 4. 输入主密码解锁
@@ -296,6 +426,41 @@ export const App: React.FC = () => {
         const decryptedList = await decryptAllVaultItems(result.masterKey, encryptedItems);
         setItems(decryptedList);
         addToast('success', '密码数据库解锁成功');
+
+        // 解锁后后台自动与极空间云端比对最新版本（多端无感双向对齐）
+        const cfg = loadNasSyncConfig();
+        if (cfg?.token && cfg?.serverUrl) {
+          (async () => {
+            try {
+              const pullRes = await pullVaultFromNas(cfg.serverUrl, cfg.token);
+              if (pullRes.success && pullRes.encryptedItems) {
+                const remoteDecrypted = await decryptAllVaultItems(result.masterKey!, pullRes.encryptedItems);
+                const { mergedItems, addedFromRemote, updatedFromRemote, retainedLocalOnly } = mergeVaultItems(
+                  decryptedList,
+                  remoteDecrypted
+                );
+                if (addedFromRemote > 0 || updatedFromRemote > 0) {
+                  const reEncrypted = [];
+                  for (const it of mergedItems) {
+                    reEncrypted.push(await encryptVaultItem(result.masterKey!, it, it.id));
+                  }
+                  saveStoredEncryptedItems(reEncrypted);
+                  setItems(mergedItems);
+                  addToast('info', `已同步极空间最新数据 (+${addedFromRemote}条新增, ~${updatedFromRemote}条更新)`);
+                }
+                if (retainedLocalOnly > 0) {
+                  const fullEncrypted = [];
+                  for (const it of mergedItems) {
+                    fullEncrypted.push(await encryptVaultItem(result.masterKey!, it, it.id));
+                  }
+                  await pushVaultToNas(cfg.serverUrl, cfg.token, pullRes.vaultMeta || vaultMeta, fullEncrypted, getDeviceIdentifier());
+                }
+              }
+            } catch (syncErr) {
+              console.warn('[AutoSyncOnUnlock] 自动静默对齐异常:', syncErr);
+            }
+          })();
+        }
       } catch (err) {
         console.error('解密金库条目异常:', err);
         addToast('error', '部分密码条目解密异常');
@@ -372,12 +537,19 @@ export const App: React.FC = () => {
       updatedAt: encryptedItem.updatedAt
     };
 
+    let newItems: DecryptedVaultItem[];
     if (existingId) {
-      setItems((prev) => prev.map((i) => (i.id === existingId ? updatedDecrypted : i)));
+      newItems = items.map((i) => (i.id === existingId ? updatedDecrypted : i));
+      setItems(newItems);
       addToast('success', `[${itemData.title}] 已安全更新`);
     } else {
-      setItems((prev) => [updatedDecrypted, ...prev]);
+      newItems = [updatedDecrypted, ...items];
+      setItems(newItems);
       addToast('success', `[${itemData.title}] 已加密入库`);
+    }
+
+    if (vaultMeta) {
+      autoPushToNas(vaultMeta, newItems, masterKey);
     }
   };
 
@@ -398,8 +570,12 @@ export const App: React.FC = () => {
     const updatedEncryptedItems = storedItems.map((i) => (i.id === id ? encryptedItem : i));
     saveStoredEncryptedItems(updatedEncryptedItems);
 
-    setItems((prev) => prev.map((i) => (i.id === id ? updatedDecrypted : i)));
+    const newItems = items.map((i) => (i.id === id ? updatedDecrypted : i));
+    setItems(newItems);
     addToast('info', `已将 [${title}] 移至废纸篓，可在废纸篓中随时恢复`);
+    if (vaultMeta) {
+      autoPushToNas(vaultMeta, newItems, masterKey);
+    }
   };
 
   // 6.1 从废纸篓一键恢复
@@ -419,8 +595,12 @@ export const App: React.FC = () => {
     const updatedEncryptedItems = storedItems.map((i) => (i.id === id ? encryptedItem : i));
     saveStoredEncryptedItems(updatedEncryptedItems);
 
-    setItems((prev) => prev.map((i) => (i.id === id ? updatedDecrypted : i)));
+    const newItems = items.map((i) => (i.id === id ? updatedDecrypted : i));
+    setItems(newItems);
     addToast('success', `已恢复 [${target.title}] 至密码库`);
+    if (vaultMeta) {
+      autoPushToNas(vaultMeta, newItems, masterKey);
+    }
   };
 
   // 6.2 彻底粉碎删除 (从加密介质彻底抹除)
@@ -430,8 +610,12 @@ export const App: React.FC = () => {
     const storedItems = loadStoredEncryptedItems();
     const updated = storedItems.filter((i) => i.id !== id);
     saveStoredEncryptedItems(updated);
-    setItems((prev) => prev.filter((i) => i.id !== id));
+    const newItems = items.filter((i) => i.id !== id);
+    setItems(newItems);
     addToast('warning', `已彻底粉碎抹除 [${title}]`);
+    if (vaultMeta && masterKey) {
+      autoPushToNas(vaultMeta, newItems, masterKey);
+    }
   };
 
   // 6.3 一键清空废纸篓
@@ -444,8 +628,12 @@ export const App: React.FC = () => {
     const storedItems = loadStoredEncryptedItems();
     const updated = storedItems.filter((i) => !trashIds.has(i.id));
     saveStoredEncryptedItems(updated);
-    setItems((prev) => prev.filter((i) => !trashIds.has(i.id)));
+    const newItems = items.filter((i) => !trashIds.has(i.id));
+    setItems(newItems);
     addToast('warning', `已清空废纸篓，共抹除了 ${trashItems.length} 条凭据`);
+    if (vaultMeta && masterKey) {
+      autoPushToNas(vaultMeta, newItems, masterKey);
+    }
   };
 
   // 6.5 切换置顶状态
@@ -466,11 +654,15 @@ export const App: React.FC = () => {
     const updatedEncryptedItems = storedItems.map((i) => (i.id === id ? encryptedItem : i));
     saveStoredEncryptedItems(updatedEncryptedItems);
 
-    setItems((prev) => prev.map((i) => (i.id === id ? updatedDecrypted : i)));
+    const newItems = items.map((i) => (i.id === id ? updatedDecrypted : i));
+    setItems(newItems);
     addToast(
       'success',
       newFavoriteState ? `已将 [${target.title}] 设为核心置顶` : `已取消 [${target.title}] 的核心置顶`
     );
+    if (vaultMeta) {
+      autoPushToNas(vaultMeta, newItems, masterKey);
+    }
   };
 
   // 7. 复制账号
@@ -553,9 +745,13 @@ export const App: React.FC = () => {
 
       const allEncrypted = [...newEncryptedItems, ...storedItems];
       saveStoredEncryptedItems(allEncrypted);
-      setItems((prev) => [...newDecryptedItems, ...prev]);
+      const allDecrypted = [...newDecryptedItems, ...items];
+      setItems(allDecrypted);
 
       addToast('success', `成功加密导入 ${newEncryptedItems.length} 条密码凭据！`);
+      if (vaultMeta) {
+        autoPushToNas(vaultMeta, allDecrypted, masterKey);
+      }
     } catch (err) {
       console.error('批量导入异常:', err);
       addToast('error', '批量导入发生异常');
@@ -684,10 +880,12 @@ export const App: React.FC = () => {
         }}
         onChangeLockTimeout={handleChangeLockTimeout}
         onLockNow={handleLockNow}
+        onLogout={handleLogout}
         onOpenGenerator={() => setIsGeneratorModalOpen(true)}
         onOpenBackup={() => setIsBackupModalOpen(true)}
         onOpenChangeMasterPassword={() => setIsChangeMasterModalOpen(true)}
         onOpenEmergencyKit={() => setIsEmergencyKitModalOpen(true)}
+        currentAccount={currentAccount}
         isNasConnected={Boolean(nasConfig?.token)}
         nasLastSyncTime={nasConfig?.lastSyncTime}
         onOpenSyncModal={() => setIsSyncModalOpen(true)}
@@ -697,15 +895,18 @@ export const App: React.FC = () => {
       {/* 主体工作台 */}
       <main className="flex-1 flex overflow-hidden w-full relative">
         {isLocked ? (
-          // 锁定状态下居中展示认证弹窗
+          // 锁定或未登录状态下居中展示统一账号认证弹窗
           <div className="flex-1 flex items-center justify-center p-4 overflow-y-auto">
             <MasterAuthModal
               isInitialized={!!vaultMeta}
-              onInitialize={handleInitialize}
+              currentAccount={currentAccount}
+              onLogin={handleLogin}
+              onRegister={handleRegister}
               onUnlock={handleUnlock}
+              onLogout={handleLogout}
               onOpenRestore={() => setIsBackupModalOpen(true)}
               onResetVault={handleResetVault}
-              onLoadFromNas={handleLoadFromNas}
+              onInitializeStandalone={handleInitialize}
             />
           </div>
         ) : (

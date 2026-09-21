@@ -10,7 +10,9 @@ import {
   Lock,
   ChevronDown,
   Key,
-  FileText
+  FileText,
+  LogOut,
+  User
 } from 'lucide-react';
 import { SafeVaultLogo } from './SafeVaultLogo';
 
@@ -21,11 +23,13 @@ interface HeaderProps {
   lockTimeoutMinutes: number;
   hasSecondaryPassword: boolean;
   isSecondaryAuthorized: boolean;
+  currentAccount?: string | null;
   isNasConnected?: boolean;
   nasLastSyncTime?: string | null;
   onOpenSecondaryPasswordModal: () => void;
   onChangeLockTimeout: (mins: number) => void;
   onLockNow: () => void;
+  onLogout?: () => void;
   onOpenGenerator: () => void;
   onOpenBackup: () => void;
   onOpenChangeMasterPassword?: () => void;
@@ -41,11 +45,13 @@ export const Header: React.FC<HeaderProps> = ({
   lockTimeoutMinutes,
   hasSecondaryPassword,
   isSecondaryAuthorized,
+  currentAccount,
   isNasConnected,
   nasLastSyncTime,
   onOpenSecondaryPasswordModal,
   onChangeLockTimeout,
   onLockNow,
+  onLogout,
   onOpenGenerator,
   onOpenBackup,
   onOpenChangeMasterPassword,
@@ -133,26 +139,26 @@ export const Header: React.FC<HeaderProps> = ({
               </select>
             </div>
 
-            {/* 极空间 NAS 云同步状态 */}
+            {/* 当前登录账号状态 / 极空间同步入口 */}
             {onOpenSyncModal && (
               <button
                 onClick={onOpenSyncModal}
                 className={`px-2.5 py-1.5 rounded border text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                   isNasConnected
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                    ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 shadow-xs'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
                 }`}
-                title={isNasConnected ? `已连接极空间 NAS (最后同步: ${nasLastSyncTime ? new Date(nasLastSyncTime).toLocaleTimeString() : '刚刚'})` : '极空间 NAS 多端同步中心 (未连接)'}
+                title={isNasConnected ? `当前账号: ${currentAccount || '已联机'} · 极空间同步在线 (最后同步: ${nasLastSyncTime ? new Date(nasLastSyncTime).toLocaleTimeString() : '刚刚'})` : '极空间 NAS 同步中心 (未连接)'}
               >
                 {isNasConnected ? (
                   <>
-                    <Cloud className="w-3.5 h-3.5 text-emerald-600 animate-pulse shrink-0" />
-                    <span className="font-bold">极空间同步</span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="font-bold font-mono">👤 {currentAccount || '已联机'}</span>
                   </>
                 ) : (
                   <>
                     <CloudOff className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                    <span>极空间同步</span>
+                    <span>极空间未连接</span>
                   </>
                 )}
               </button>
@@ -262,15 +268,28 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
 
-            {/* 立即锁定密码库 (醒目深色战术按钮) */}
-            <button
-              onClick={onLockNow}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs transition-all whitespace-nowrap shrink-0"
-              title="立即锁定密码数据库"
-            >
-              <Lock className="w-3 h-3 text-brand-lime shrink-0" />
-              <span>锁定</span>
-            </button>
+            {/* 立即锁定与退出当前账号 */}
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                onClick={onLockNow}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs transition-all whitespace-nowrap shrink-0"
+                title="立即锁定密码数据库 (锁屏防窥，输入主密码即可快速解锁)"
+              >
+                <Lock className="w-3 h-3 text-brand-lime shrink-0" />
+                <span>锁定</span>
+              </button>
+
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  className="px-2.5 py-1.5 rounded text-slate-600 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 transition-colors flex items-center gap-1 text-xs"
+                  title="退出当前账号 (返回登录界面，可切换其他账号)"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">退出</span>
+                </button>
+              )}
+            </div>
           </>
         )}
       </div>

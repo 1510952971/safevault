@@ -51,11 +51,21 @@ export function saveNasSyncConfig(config: NasSyncConfig | null): void {
 }
 
 /**
- * 格式化标准化服务端网址
+ * 格式化标准化服务端网址 (无参数或空串时自动使用当前浏览器 origin，完全免疫域名变动)
  */
-export function normalizeServerUrl(rawUrl: string): string {
+export function normalizeServerUrl(rawUrl?: string): string {
+  if (!rawUrl || !rawUrl.trim()) {
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+      return window.location.origin;
+    }
+    return '';
+  }
   let url = rawUrl.trim();
-  if (!url) return '';
+  if (url.startsWith('/')) {
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+      return window.location.origin;
+    }
+  }
   if (!/^https?:\/\//i.test(url)) {
     url = `http://${url}`;
   }
