@@ -22,6 +22,7 @@ interface SidebarProps {
   riskyCount?: number;
   trashCount?: number;
   totalCount?: number;
+  categoryCounts?: Record<string, number>;
 }
 
 const CATEGORY_ICON_MAP: Record<CategoryType, React.ReactNode> = {
@@ -39,7 +40,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   favoritesCount = 0,
   riskyCount = 0,
   trashCount = 0,
-  totalCount = 0
+  totalCount = 0,
+  categoryCounts = {}
 }) => {
   return (
     <aside className="w-full lg:w-60 shrink-0 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 lg:h-full flex flex-col justify-between overflow-hidden select-none z-10 shadow-sm lg:shadow-none">
@@ -55,7 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* 竖向战术菜单项 */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
         <nav className="divide-y divide-slate-100 flex flex-row lg:flex-col overflow-x-auto lg:overflow-x-visible">
-          {/* 全部凭据 00 */}
+          {/* 全部凭据 */}
           <button
             onClick={() => onSelectCategory('all')}
             className={`w-full text-left px-3.5 py-2.5 transition-all flex items-center justify-between group whitespace-nowrap lg:whitespace-normal shrink-0 ${
@@ -74,11 +76,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="text-xs">全部凭据</span>
             </div>
             <span
-              className={`font-mono text-[11px] ml-2 ${
-                selectedCategory === 'all' ? 'text-brand-lime font-bold' : 'text-slate-400'
+              className={`font-mono text-[11px] ml-2 px-1.5 py-0.5 rounded font-bold transition-colors ${
+                selectedCategory === 'all'
+                  ? 'text-brand-lime bg-white/10'
+                  : 'text-slate-600 bg-slate-100'
               }`}
             >
-              00
+              {totalCount}
             </span>
           </button>
 
@@ -101,10 +105,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="text-xs font-medium">核心置顶</span>
             </div>
             <span
-              className={`font-mono text-[11px] ml-2 px-1.5 py-0.2 rounded ${
+              className={`font-mono text-[11px] ml-2 px-1.5 py-0.5 rounded font-bold transition-colors ${
                 selectedCategory === 'favorites'
-                  ? 'text-brand-lime font-bold'
-                  : 'text-amber-600 bg-amber-50 font-bold'
+                  ? 'text-brand-lime bg-white/10'
+                  : favoritesCount > 0
+                  ? 'text-amber-600 bg-amber-50'
+                  : 'text-slate-400 bg-slate-100'
               }`}
             >
               {favoritesCount}
@@ -130,21 +136,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="text-xs font-medium">风险审计</span>
             </div>
             <span
-              className={`font-mono text-[11px] ml-2 px-1.5 py-0.2 rounded font-bold ${
+              className={`font-mono text-[11px] ml-2 px-1.5 py-0.5 rounded font-bold transition-colors ${
                 selectedCategory === 'risky'
-                  ? 'text-brand-lime'
+                  ? 'text-brand-lime bg-white/10'
                   : riskyCount > 0
                   ? 'text-rose-600 bg-rose-50'
-                  : 'text-slate-400'
+                  : 'text-slate-400 bg-slate-100'
               }`}
             >
               {riskyCount}
             </span>
           </button>
 
-          {/* 各细分战术分类 01 ~ 06 */}
+          {/* 各细分分类 */}
           {CATEGORIES.map((cat) => {
             const isSelected = selectedCategory === cat.key;
+            const count = categoryCounts[cat.key] || 0;
             return (
               <button
                 key={cat.key}
@@ -165,11 +172,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span className="text-xs">{cat.label}</span>
                 </div>
                 <span
-                  className={`font-mono text-[11px] ml-2 ${
-                    isSelected ? 'text-brand-lime font-bold' : 'text-slate-400'
+                  className={`font-mono text-[11px] ml-2 px-1.5 py-0.5 rounded font-bold transition-colors ${
+                    isSelected
+                      ? 'text-brand-lime bg-white/10'
+                      : count > 0
+                      ? 'text-slate-600 bg-slate-100'
+                      : 'text-slate-400 bg-slate-50'
                   }`}
                 >
-                  {cat.code}
+                  {count}
                 </span>
               </button>
             );
@@ -180,7 +191,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="h-px bg-slate-200" />
           </div>
 
-          {/* 废纸篓 99 */}
+          {/* 废纸篓 */}
           <button
             onClick={() => onSelectCategory('trash')}
             className={`w-full text-left px-3.5 py-2.5 transition-all flex items-center justify-between group whitespace-nowrap lg:whitespace-normal shrink-0 ${
@@ -199,12 +210,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="text-xs">废纸篓</span>
             </div>
             <span
-              className={`font-mono text-[11px] ml-2 px-1.5 py-0.2 rounded font-bold ${
+              className={`font-mono text-[11px] ml-2 px-1.5 py-0.5 rounded font-bold transition-colors ${
                 selectedCategory === 'trash'
-                  ? 'text-rose-400'
+                  ? 'text-rose-400 bg-white/10'
                   : trashCount > 0
                   ? 'text-rose-600 bg-rose-50'
-                  : 'text-slate-400'
+                  : 'text-slate-400 bg-slate-100'
               }`}
             >
               {trashCount}

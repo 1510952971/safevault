@@ -122,6 +122,15 @@ export const VaultList: React.FC<VaultListProps> = ({
     ? null
     : activeItems.find((i) => i.isFavorite) || (activeItems.length > 0 ? activeItems[0] : null);
 
+  // 计算每个分类下的活跃密码凭据数量
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const item of activeItems) {
+      counts[item.category] = (counts[item.category] || 0) + 1;
+    }
+    return counts;
+  }, [activeItems]);
+
   return (
     <div className="flex-1 flex flex-col lg:flex-row h-full overflow-hidden w-full relative">
       {/* 1. 左侧顶天立地分类导航停靠栏 */}
@@ -132,6 +141,7 @@ export const VaultList: React.FC<VaultListProps> = ({
         riskyCount={audit.riskyItemIds.length}
         trashCount={trashItems.length}
         totalCount={activeItems.length}
+        categoryCounts={categoryCounts}
       />
 
       {/* 2. 中部核心主监控看板与凭据列表 (独立容器平滑滚动) */}
