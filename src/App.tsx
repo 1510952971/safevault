@@ -24,6 +24,7 @@ import { PasswordGeneratorModal } from './components/PasswordGeneratorModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
 import { SecondaryAuthModal, SecondaryAuthModalMode } from './components/SecondaryAuthModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { PrivacyShield } from './components/PrivacyShield';
 import { Toast } from './components/Toast';
 
 export const App: React.FC = () => {
@@ -40,6 +41,7 @@ export const App: React.FC = () => {
   const [isGeneratorModalOpen, setIsGeneratorModalOpen] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isPrivacyMaskActive, setIsPrivacyMaskActive] = useState(false);
 
   // 二级密码鉴权状态
   const [secondaryAuthExpiry, setSecondaryAuthExpiry] = useState<number | null>(null);
@@ -92,6 +94,7 @@ export const App: React.FC = () => {
     setIsBackupModalOpen(false);
     setIsSecondaryModalOpen(false);
     setIsCommandPaletteOpen(false);
+    setIsPrivacyMaskActive(false);
     pendingSecondaryActionRef.current = null;
     addToast('info', '保险箱已安全锁定');
   }, []);
@@ -108,6 +111,32 @@ export const App: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isLocked, masterKey]);
+
+  // 窗口失焦或切后台时激活防肩窥高斯模糊隐私幕布 (仅在已解锁状态下生效)
+  useEffect(() => {
+    if (isLocked || !masterKey) {
+      setIsPrivacyMaskActive(false);
+      return;
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setIsPrivacyMaskActive(true);
+      }
+    };
+
+    const handleBlur = () => {
+      setIsPrivacyMaskActive(true);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleBlur);
+    };
   }, [isLocked, masterKey]);
 
   // 2. 超时无操作自动锁定机制 (支持实时每秒倒计时与自定义时长)
@@ -195,6 +224,13 @@ export const App: React.FC = () => {
       return true;
     }
     return false;
+  };
+
+  // 4.5 敏感操作二次核验主密码 (不修改内存密钥和解锁态)
+  const handleVerifyMasterPasswordOnly = async (password: string): Promise<boolean> => {
+    if (!vaultMeta) return false;
+    const result = await verifyMasterPassword(password, vaultMeta);
+    return result.success;
   };
 
   // 5. 保存或更新密码条目
@@ -612,7 +648,7 @@ export const App: React.FC = () => {
         onCopyPassword={handleCopyPassword}
       />
 
-      {/* 备份与恢复弹窗 (支持 JSON 与 CSV 批量导入/导出) */}
+      {/* 备份与恢复弹窗 (支持 JSON 与 CSV 批量导入/导出，导出强制二次核验主密码) */}
       <BackupRestoreModal
         isOpen={isBackupModalOpen}
         items={items}
@@ -620,6 +656,7 @@ export const App: React.FC = () => {
         onRestoreSuccess={handleRestoreSuccess}
         onBatchImportCsv={handleBatchImportCsv}
         onResetVaultConfirm={handleResetVault}
+        onVerifyMasterPassword={handleVerifyMasterPasswordOnly}
       />
 
       {/* 二级安全密码核验与设置弹窗 */}
@@ -661,6 +698,12 @@ export const App: React.FC = () => {
           setIsCommandPaletteOpen(false);
           handleLockNow();
         }}
+      />
+
+      {/* 浏览器失焦/切后台高斯模糊防肩窥隐私幕布 */}
+      <PrivacyShield
+        isActive={isPrivacyMaskActive && !isLocked}
+        onResume={() => setIsPrivacyMaskActive(false)}
       />
 
       {/* 浮动轻量 Toast 提示 */}

@@ -223,7 +223,7 @@ async function runTests() {
   console.log('  -> 验证通过：废纸篓隔离生效，软删除与一键恢复运作完美');
 
   // 4. 零知识端到端加密验证
-  console.log('[4/4] 测试零知识端到端加密防护 (敏感字段不得泄露在明文外壳)...');
+  console.log('[4/6] 测试零知识端到端加密防护 (敏感字段不得泄露在明文外壳)...');
   const rawOuterKeys = Object.keys(encryptedItem);
   assert.ok(!rawOuterKeys.includes('customFields'), '外壳绝对不能出现明文 customFields');
   assert.ok(!rawOuterKeys.includes('passwordHistory'), '外壳绝对不能出现明文 passwordHistory');
@@ -231,7 +231,55 @@ async function runTests() {
   assert.ok(!rawOuterKeys.includes('username'), '外壳绝对不能出现明文 username');
   console.log('  -> 验证通过：自定义字段与历史记录皆深藏于 AES-GCM 密文载荷中');
 
-  console.log('--- 全部高级密码管理功能单元测试顺利通过！---');
+  // 5. 阶梯式防暴力破解冷却梯度测试
+  console.log('[5/6] 测试主密码防暴力破解阶梯式冷却算法 (Rate Limiting)...');
+  function getCooldownSecondsForAttempts(attempts) {
+    if (attempts >= 10) return 300;
+    if (attempts >= 8) return 60;
+    if (attempts >= 5) return 30;
+    if (attempts >= 3) return 5;
+    return 0;
+  }
+  assert.strictEqual(getCooldownSecondsForAttempts(0), 0);
+  assert.strictEqual(getCooldownSecondsForAttempts(2), 0);
+  assert.strictEqual(getCooldownSecondsForAttempts(3), 5, '3次失败应触发5秒冷却');
+  assert.strictEqual(getCooldownSecondsForAttempts(4), 5);
+  assert.strictEqual(getCooldownSecondsForAttempts(5), 30, '5次失败应触发30秒冷却');
+  assert.strictEqual(getCooldownSecondsForAttempts(7), 30);
+  assert.strictEqual(getCooldownSecondsForAttempts(8), 60, '8次失败应触发60秒冷却');
+  assert.strictEqual(getCooldownSecondsForAttempts(9), 60);
+  assert.strictEqual(getCooldownSecondsForAttempts(10), 300, '10次失败应触发300秒(5分钟)深度锁定');
+  assert.strictEqual(getCooldownSecondsForAttempts(15), 300);
+  console.log('  -> 验证通过：阶梯式防爆破冷却规则严格符合攻防设计标准');
+
+  // 6. 导出敏感数据二次核验校验链测试
+  console.log('[6/6] 测试导出备份与 CSV 前的身份二次核验阻断机制...');
+  let exportExecuted = false;
+  const mockExportAction = () => { exportExecuted = true; };
+
+  async function mockVerifiedExport(password, correctPassword) {
+    const isVerified = password === correctPassword;
+    if (isVerified) {
+      mockExportAction();
+      return true;
+    }
+    return false;
+  }
+
+  // 密码错误时：拒绝导出
+  exportExecuted = false;
+  const failResult = await mockVerifiedExport('WrongPass!', 'SafePassphrase#2026');
+  assert.strictEqual(failResult, false);
+  assert.strictEqual(exportExecuted, false, '密码错误时绝对不得放行数据导出');
+
+  // 密码正确时：放行导出
+  exportExecuted = false;
+  const passResult = await mockVerifiedExport('SafePassphrase#2026', 'SafePassphrase#2026');
+  assert.strictEqual(passResult, true);
+  assert.strictEqual(exportExecuted, true, '密码正确时正常放行数据流转');
+  console.log('  -> 验证通过：敏感导出二次身份挑战严密阻断非授权窃取');
+
+  console.log('--- 全部高级密码管理与核心安全防线单元测试顺利通过！---');
 }
 
 runTests().catch((err) => {

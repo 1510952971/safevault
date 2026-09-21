@@ -10,6 +10,7 @@ interface BackupRestoreModalProps {
   onRestoreSuccess: (backup: VaultBackupFile) => void;
   onBatchImportCsv: (importedItems: Array<Omit<DecryptedVaultItem, 'id' | 'createdAt' | 'updatedAt'>>) => Promise<void>;
   onResetVaultConfirm: () => void;
+  onVerifyMasterPassword?: (password: string) => Promise<boolean>;
 }
 
 export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
@@ -18,7 +19,8 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
   onClose,
   onRestoreSuccess,
   onBatchImportCsv,
-  onResetVaultConfirm
+  onResetVaultConfirm,
+  onVerifyMasterPassword
 }) => {
   const [activeTab, setActiveTab] = useState<'backup' | 'restore' | 'csv' | 'reset'>('backup');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -27,13 +29,25 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const csvFileInputRef = useRef<HTMLInputElement>(null);
 
+  // 敏感操作二次核验主密码状态
+  const [pendingExportType, setPendingExportType] = useState<'json' | 'csv' | null>(null);
+  const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isVerifyingAuth, setIsVerifyingAuth] = useState(false);
+
   if (!isOpen) return null;
 
   const handleExportJson = () => {
-    try {
-      exportVaultBackup();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : '导出备份失败');
+    if (onVerifyMasterPassword) {
+      setPendingExportType('json');
+      setAuthPassword('');
+      setAuthError('');
+    } else {
+      try {
+        exportVaultBackup();
+      } catch (e: unknown) {
+        alert(e instanceof Error ? e.message : '导出备份失败');
+      }
     }
   };
 
@@ -42,7 +56,52 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
       alert('当前保险箱无任何凭据，无需导出 CSV');
       return;
     }
-    if (window.confirm('安全提醒：CSV 文件包含明文密码！请在受信任设备上妥善保存。是否继续导出？')) {
+    if (onVerifyMasterPassword) {
+      setPendingExportType('csv');
+      setAuthPassword('');
+      setAuthError('');
+    } else {
+      if (window.confirm('安全提醒：CSV 文件包含明文密码！请在受信任设备上妥善保存。是否继续导出？')) {
+        exportVaultAsCsv(items);
+      }
+    }
+  };
+
+  const handleConfirmExportWithAuth = async () => {
+    if (!authPassword) {
+      setAuthError('请输入主密码');
+      return;
+    }
+
+    if (onVerifyMasterPassword) {
+      setIsVerifyingAuth(true);
+      setAuthError('');
+      try {
+        const ok = await onVerifyMasterPassword(authPassword);
+        if (!ok) {
+          setAuthError('主密码核验失败，操作已拒绝');
+          setIsVerifyingAuth(false);
+          return;
+        }
+      } catch (_e) {
+        setAuthError('核验异常，请稍后重试');
+        setIsVerifyingAuth(false);
+        return;
+      }
+      setIsVerifyingAuth(false);
+    }
+
+    const type = pendingExportType;
+    setPendingExportType(null);
+    setAuthPassword('');
+
+    if (type === 'json') {
+      try {
+        exportVaultBackup();
+      } catch (e: unknown) {
+        alert(e instanceof Error ? e.message : '导出备份失败');
+      }
+    } else if (type === 'csv') {
       exportVaultAsCsv(items);
     }
   };
@@ -312,6 +371,72 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
             </div>
           )}
         </div>
+
+        {/* 敏感操作二次核验主密码浮层 */}
+        {pendingExportType && (
+          <div className="absolute inset-0 z-30 bg-white/95 backdrop-blur-sm p-6 flex flex-col justify-center items-center">
+            <div className="w-full max-w-sm bg-white border border-slate-300 rounded-xl p-6 shadow-2xl space-y-4">
+              <div className="flex items-center gap-3 text-slate-800">
+                <div className="w-10 h-10 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900">敏感操作：身份二次核验</h4>
+                  <p className="text-[11px] text-slate-500">
+                    导出 {pendingExportType === 'json' ? '全量加密备份 (.json)' : '明文 CSV 密码表 (.csv)'} 前需核验主密码
+                  </p>
+                </div>
+              </div>
+
+              {authError && (
+                <div className="p-2 bg-rose-50 border border-rose-200 rounded text-rose-600 text-xs flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{authError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">主密码</label>
+                <input
+                  type="password"
+                  autoFocus
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleConfirmExportWithAuth();
+                    }
+                  }}
+                  placeholder="请输入主密码以确认操作..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 focus:border-slate-800 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-slate-800"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingExportType(null);
+                    setAuthPassword('');
+                    setAuthError('');
+                  }}
+                  className="px-3 py-1.5 border border-slate-300 text-slate-600 rounded text-xs font-medium hover:bg-slate-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  disabled={isVerifyingAuth || !authPassword}
+                  onClick={handleConfirmExportWithAuth}
+                  className="px-4 py-1.5 bg-slate-900 hover:bg-black text-brand-lime font-bold rounded text-xs transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {isVerifyingAuth ? '核验中...' : '确认核验并导出'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
