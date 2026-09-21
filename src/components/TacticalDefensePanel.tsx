@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Cpu, AlertTriangle, ShieldCheck, CopyCheck, KeyRound } from 'lucide-react';
+import { Clock, Cpu, AlertTriangle, ShieldCheck, CopyCheck, KeyRound, Key, FileText } from 'lucide-react';
 
 interface TacticalDefensePanelProps {
   weakCount: number;
@@ -13,6 +13,8 @@ interface TacticalDefensePanelProps {
   onOpenGenerator: () => void;
   onOpenBackup: () => void;
   onFilterRisky: () => void;
+  onOpenChangeMasterPassword?: () => void;
+  onOpenEmergencyKit?: () => void;
 }
 
 export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
@@ -26,7 +28,9 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
   onChangeLockTimeout,
   onOpenGenerator,
   onOpenBackup,
-  onFilterRisky
+  onFilterRisky,
+  onOpenChangeMasterPassword,
+  onOpenEmergencyKit
 }) => {
   const hasRisk = weakCount > 0 || reusedCount > 0;
 
@@ -193,6 +197,42 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
               <span className="text-[10px] text-slate-300 font-mono block">.SAFEVAULT.JSON</span>
             </div>
           </button>
+
+          {/* 修改主密码 */}
+          {onOpenChangeMasterPassword && (
+            <button
+              onClick={onOpenChangeMasterPassword}
+              className="w-full relative flex items-center bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded overflow-hidden transition-all group p-0 shadow-sm"
+            >
+              <div className="w-9 h-11 bg-brand-lime flex items-center justify-center font-bold text-slate-900 shrink-0">
+                <span className="text-base font-mono">&gt;</span>
+              </div>
+              <div className="flex-1 px-3 text-left">
+                <span className="text-xs font-bold text-slate-900 group-hover:text-slate-950 block">
+                  修改主密码并重加密
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono block">RE-KEY VAULT</span>
+              </div>
+            </button>
+          )}
+
+          {/* 离线应急救援卡 */}
+          {onOpenEmergencyKit && (
+            <button
+              onClick={onOpenEmergencyKit}
+              className="w-full relative flex items-center bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded overflow-hidden transition-all group p-0 shadow-sm"
+            >
+              <div className="w-9 h-11 bg-brand-lime flex items-center justify-center font-bold text-slate-900 shrink-0">
+                <span className="text-base font-mono">&gt;</span>
+              </div>
+              <div className="flex-1 px-3 text-left">
+                <span className="text-xs font-bold text-slate-900 group-hover:text-slate-950 block">
+                  打印/导出应急救援单
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono block">EMERGENCY KIT</span>
+              </div>
+            </button>
+          )}
         </div>
       </div>
 

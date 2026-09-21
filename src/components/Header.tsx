@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Lock, Sparkles, DownloadCloud, Terminal, Clock, KeyRound } from 'lucide-react';
+import { ShieldCheck, Lock, Sparkles, DownloadCloud, Terminal, Clock, KeyRound, Key, FileText } from 'lucide-react';
 
 interface HeaderProps {
   isLocked: boolean;
@@ -13,6 +13,8 @@ interface HeaderProps {
   onLockNow: () => void;
   onOpenGenerator: () => void;
   onOpenBackup: () => void;
+  onOpenChangeMasterPassword?: () => void;
+  onOpenEmergencyKit?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -26,7 +28,9 @@ export const Header: React.FC<HeaderProps> = ({
   onChangeLockTimeout,
   onLockNow,
   onOpenGenerator,
-  onOpenBackup
+  onOpenBackup,
+  onOpenChangeMasterPassword,
+  onOpenEmergencyKit
 }) => {
   const formatTimer = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -130,6 +134,30 @@ export const Header: React.FC<HeaderProps> = ({
                 <DownloadCloud className="w-3.5 h-3.5 text-slate-700" />
                 <span className="hidden sm:inline">密文备份</span>
               </button>
+
+              {/* 修改主密码 */}
+              {onOpenChangeMasterPassword && (
+                <button
+                  onClick={onOpenChangeMasterPassword}
+                  className="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-300 text-xs font-medium transition-colors flex items-center gap-1.5"
+                  title="修改主密码并全库密文重加密"
+                >
+                  <Key className="w-3.5 h-3.5 text-slate-700" />
+                  <span className="hidden xl:inline">修改主密码</span>
+                </button>
+              )}
+
+              {/* 离线应急救援卡 */}
+              {onOpenEmergencyKit && (
+                <button
+                  onClick={onOpenEmergencyKit}
+                  className="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-300 text-xs font-medium transition-colors flex items-center gap-1.5"
+                  title="生成打印离线应急救援凭证"
+                >
+                  <FileText className="w-3.5 h-3.5 text-slate-700" />
+                  <span className="hidden xl:inline">应急救援单</span>
+                </button>
+              )}
 
               {/* 立即锁定终端 */}
               <button

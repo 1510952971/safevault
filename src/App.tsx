@@ -6,7 +6,8 @@ import {
   setupSecondaryPassword,
   verifySecondaryPassword,
   encryptVaultItem,
-  decryptAllVaultItems
+  decryptAllVaultItems,
+  changeMasterPasswordAndReEncryptVault
 } from './utils/crypto';
 import {
   loadStoredVaultMeta,
@@ -24,6 +25,8 @@ import { PasswordGeneratorModal } from './components/PasswordGeneratorModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
 import { SecondaryAuthModal, SecondaryAuthModalMode } from './components/SecondaryAuthModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { ChangeMasterPasswordModal } from './components/ChangeMasterPasswordModal';
+import { EmergencyKitModal } from './components/EmergencyKitModal';
 import { PrivacyShield } from './components/PrivacyShield';
 import { Toast } from './components/Toast';
 
@@ -42,6 +45,8 @@ export const App: React.FC = () => {
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isPrivacyMaskActive, setIsPrivacyMaskActive] = useState(false);
+  const [isChangeMasterModalOpen, setIsChangeMasterModalOpen] = useState(false);
+  const [isEmergencyKitModalOpen, setIsEmergencyKitModalOpen] = useState(false);
 
   // 二级密码鉴权状态
   const [secondaryAuthExpiry, setSecondaryAuthExpiry] = useState<number | null>(null);
@@ -95,6 +100,8 @@ export const App: React.FC = () => {
     setIsSecondaryModalOpen(false);
     setIsCommandPaletteOpen(false);
     setIsPrivacyMaskActive(false);
+    setIsChangeMasterModalOpen(false);
+    setIsEmergencyKitModalOpen(false);
     pendingSecondaryActionRef.current = null;
     addToast('info', '保险箱已安全锁定');
   }, []);
@@ -231,6 +238,34 @@ export const App: React.FC = () => {
     if (!vaultMeta) return false;
     const result = await verifyMasterPassword(password, vaultMeta);
     return result.success;
+  };
+
+  // 4.6 在线无损修改主密码与全库密文一键重加密
+  const handleChangeMasterPassword = async (oldPass: string, newPass: string): Promise<boolean> => {
+    if (!vaultMeta) return false;
+    try {
+      setIsLoading(true);
+      const { newMeta, newMasterKey, newEncryptedItems } = await changeMasterPasswordAndReEncryptVault(
+        oldPass,
+        newPass,
+        vaultMeta,
+        items
+      );
+
+      saveStoredVaultMeta(newMeta);
+      saveStoredEncryptedItems(newEncryptedItems);
+      setVaultMeta(newMeta);
+      setMasterKey(newMasterKey);
+
+      addToast('success', '金库主密码已成功修改！全库凭据已全部使用新密钥重加密完成。');
+      return true;
+    } catch (err: unknown) {
+      console.error('修改主密码异常:', err);
+      addToast('error', err instanceof Error ? err.message : '修改主密码失败');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // 5. 保存或更新密码条目
@@ -577,6 +612,8 @@ export const App: React.FC = () => {
         onLockNow={handleLockNow}
         onOpenGenerator={() => setIsGeneratorModalOpen(true)}
         onOpenBackup={() => setIsBackupModalOpen(true)}
+        onOpenChangeMasterPassword={() => setIsChangeMasterModalOpen(true)}
+        onOpenEmergencyKit={() => setIsEmergencyKitModalOpen(true)}
       />
 
       {/* 主体工作台 */}
@@ -626,6 +663,8 @@ export const App: React.FC = () => {
             onCopyTotp={handleCopyTotp}
             onOpenGenerator={() => setIsGeneratorModalOpen(true)}
             onOpenBackup={() => setIsBackupModalOpen(true)}
+            onOpenChangeMasterPassword={() => setIsChangeMasterModalOpen(true)}
+            onOpenEmergencyKit={() => setIsEmergencyKitModalOpen(true)}
           />
         )}
       </main>
@@ -694,10 +733,34 @@ export const App: React.FC = () => {
           setIsCommandPaletteOpen(false);
           setIsBackupModalOpen(true);
         }}
+        onOpenChangeMasterPassword={() => {
+          setIsCommandPaletteOpen(false);
+          setIsChangeMasterModalOpen(true);
+        }}
+        onOpenEmergencyKit={() => {
+          setIsCommandPaletteOpen(false);
+          setIsEmergencyKitModalOpen(true);
+        }}
         onLockNow={() => {
           setIsCommandPaletteOpen(false);
           handleLockNow();
         }}
+      />
+
+      {/* 在线无损修改主密码与全库密文重加密弹窗 */}
+      <ChangeMasterPasswordModal
+        isOpen={isChangeMasterModalOpen}
+        onClose={() => setIsChangeMasterModalOpen(false)}
+        totalItemsCount={items.length}
+        onChangePassword={handleChangeMasterPassword}
+      />
+
+      {/* 离线应急救援卡生成与打印弹窗 */}
+      <EmergencyKitModal
+        isOpen={isEmergencyKitModalOpen}
+        onClose={() => setIsEmergencyKitModalOpen(false)}
+        vaultMeta={vaultMeta}
+        totalItemsCount={items.length}
       />
 
       {/* 浏览器失焦/切后台高斯模糊防肩窥隐私幕布 */}

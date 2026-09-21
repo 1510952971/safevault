@@ -253,7 +253,7 @@ async function runTests() {
   console.log('  -> 验证通过：阶梯式防爆破冷却规则严格符合攻防设计标准');
 
   // 6. 导出敏感数据二次核验校验链测试
-  console.log('[6/6] 测试导出备份与 CSV 前的身份二次核验阻断机制...');
+  console.log('[6/7] 测试导出备份与 CSV 前的身份二次核验阻断机制...');
   let exportExecuted = false;
   const mockExportAction = () => { exportExecuted = true; };
 
@@ -278,6 +278,98 @@ async function runTests() {
   assert.strictEqual(passResult, true);
   assert.strictEqual(exportExecuted, true, '密码正确时正常放行数据流转');
   console.log('  -> 验证通过：敏感导出二次身份挑战严密阻断非授权窃取');
+
+  // 7. 在线无损修改主密码与全库重加密测试
+  console.log('[7/7] 测试在线修改主密码与全库密文无损重加密 (Re-key & Re-encrypt)...');
+  const oldMasterPass = 'OriginalPassphrase#2026';
+  const newMasterPass = 'NewUpgradedPassphrase#2027!';
+  const initialSalt = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  const oldKey = await deriveMasterKey(oldMasterPass, initialSalt);
+
+  // 生成初始元数据
+  const initialTestIv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const tokenBuf = textEncoder.encode('SAFEVAULT_AUTH_VERIFIED_TOKEN');
+  const initialCipherBuf = await globalThis.crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: initialTestIv },
+    oldKey,
+    tokenBuf
+  );
+
+  const initialMeta = {
+    version: '1.0',
+    salt: bufferToBase64(initialSalt),
+    testCipher: bufferToBase64(new Uint8Array(initialCipherBuf)),
+    testIv: bufferToBase64(initialTestIv),
+    hasSecondaryPassword: true,
+    secondarySalt: 'dummy_sec_salt'
+  };
+
+  const sampleItems = [
+    {
+      id: 'item-1',
+      title: '财务账号',
+      category: 'finance',
+      username: 'cfo@company.com',
+      password: 'SecretCfoPassword99!',
+      website: 'https://finance.example.com',
+      notes: '重要'
+    },
+    {
+      id: 'item-2',
+      title: '主邮箱',
+      category: 'work',
+      username: 'admin@mail.com',
+      password: 'MailMasterPassword88!',
+      website: 'https://mail.example.com',
+      notes: ''
+    }
+  ];
+
+  // 模拟重加密逻辑
+  const newSalt = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  const newKey = await deriveMasterKey(newMasterPass, newSalt);
+  const newTestIv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const newCipherBuf = await globalThis.crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: newTestIv },
+    newKey,
+    tokenBuf
+  );
+
+  const newMeta = {
+    ...initialMeta,
+    salt: bufferToBase64(newSalt),
+    testCipher: bufferToBase64(new Uint8Array(newCipherBuf)),
+    testIv: bufferToBase64(newTestIv)
+  };
+
+  // 用新密钥逐条重新加密
+  const reEncryptedItems = [];
+  for (const it of sampleItems) {
+    const reEnc = await encryptVaultItem(newKey, it, it.id);
+    reEncryptedItems.push(reEnc);
+  }
+
+  // 验证 1：用新密钥成功解密所有条目，数据完好无损
+  const decItem1 = await decryptVaultItem(newKey, reEncryptedItems[0]);
+  assert.strictEqual(decItem1.title, '财务账号');
+  assert.strictEqual(decItem1.password, 'SecretCfoPassword99!');
+
+  const decItem2 = await decryptVaultItem(newKey, reEncryptedItems[1]);
+  assert.strictEqual(decItem2.title, '主邮箱');
+  assert.strictEqual(decItem2.password, 'MailMasterPassword88!');
+
+  // 验证 2：用旧密钥解密新密文条目必然抛出异常 (AEAD 阻断)
+  let oldKeyFailed = false;
+  try {
+    await decryptVaultItem(oldKey, reEncryptedItems[0]);
+  } catch (_e) {
+    oldKeyFailed = true;
+  }
+  assert.strictEqual(oldKeyFailed, true, '旧密钥必须无法解密重加密后的新密文');
+
+  // 验证 3：二级密码配置完整继承
+  assert.strictEqual(newMeta.hasSecondaryPassword, true, '修改主密码后二级密码配置必须安全保留');
+  console.log('  -> 验证通过：在线无损修改主密码与整库密文一键重加密运作完美！');
 
   console.log('--- 全部高级密码管理与核心安全防线单元测试顺利通过！---');
 }

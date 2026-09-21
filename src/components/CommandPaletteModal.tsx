@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Lock, Sparkles, DownloadCloud, Plus, ExternalLink, Copy, Key, ArrowRight, CornerDownLeft } from 'lucide-react';
+import { Search, Lock, Sparkles, DownloadCloud, Plus, ExternalLink, Copy, Key, ArrowRight, CornerDownLeft, FileText } from 'lucide-react';
 import { DecryptedVaultItem } from '../types/vault';
 
 interface CommandPaletteModalProps {
@@ -12,6 +12,8 @@ interface CommandPaletteModalProps {
   onOpenGenerator: () => void;
   onOpenBackup: () => void;
   onLockNow: () => void;
+  onOpenChangeMasterPassword?: () => void;
+  onOpenEmergencyKit?: () => void;
 }
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
@@ -23,7 +25,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenNew,
   onOpenGenerator,
   onOpenBackup,
-  onLockNow
+  onLockNow,
+  onOpenChangeMasterPassword,
+  onOpenEmergencyKit
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -50,13 +54,15 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       { id: 'act-new', label: '录入新密码凭据', icon: <Plus className="w-4 h-4 text-brand-lime" />, run: onOpenNew },
       { id: 'act-gen', label: '生成高熵随机密码', icon: <Sparkles className="w-4 h-4 text-amber-500" />, run: onOpenGenerator },
       { id: 'act-backup', label: '导出离线加密备份', icon: <DownloadCloud className="w-4 h-4 text-sky-500" />, run: onOpenBackup },
+      ...(onOpenChangeMasterPassword ? [{ id: 'act-change-master', label: '修改金库主密码并全库重加密', icon: <Key className="w-4 h-4 text-emerald-500" />, run: onOpenChangeMasterPassword }] : []),
+      ...(onOpenEmergencyKit ? [{ id: 'act-emergency-kit', label: '生成打印离线应急救援卡', icon: <FileText className="w-4 h-4 text-indigo-500" />, run: onOpenEmergencyKit }] : []),
       { id: 'act-lock', label: '立即锁定凭据管理终端', icon: <Lock className="w-4 h-4 text-rose-500" />, run: onLockNow }
     ];
 
     if (!query.trim()) return actions;
     const q = query.toLowerCase().trim();
     return actions.filter((a) => a.label.toLowerCase().includes(q));
-  }, [query, onOpenNew, onOpenGenerator, onOpenBackup, onLockNow]);
+  }, [query, onOpenNew, onOpenGenerator, onOpenBackup, onLockNow, onOpenChangeMasterPassword, onOpenEmergencyKit]);
 
   const totalSelectable = filteredItems.length + quickActions.length;
 

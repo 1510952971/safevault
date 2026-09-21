@@ -32,6 +32,8 @@ interface VaultListProps {
   onCopyTotp: (code: string) => void;
   onOpenGenerator: () => void;
   onOpenBackup: () => void;
+  onOpenChangeMasterPassword?: () => void;
+  onOpenEmergencyKit?: () => void;
 }
 
 export const VaultList: React.FC<VaultListProps> = ({
@@ -56,7 +58,9 @@ export const VaultList: React.FC<VaultListProps> = ({
   onCopyPassword,
   onCopyTotp,
   onOpenGenerator,
-  onOpenBackup
+  onOpenBackup,
+  onOpenChangeMasterPassword,
+  onOpenEmergencyKit
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -388,6 +392,8 @@ export const VaultList: React.FC<VaultListProps> = ({
         onOpenGenerator={onOpenGenerator}
         onOpenBackup={onOpenBackup}
         onFilterRisky={() => setSelectedCategory('risky')}
+        onOpenChangeMasterPassword={onOpenChangeMasterPassword}
+        onOpenEmergencyKit={onOpenEmergencyKit}
       />
     </div>
   );

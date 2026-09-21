@@ -144,6 +144,67 @@ export async function verifyMasterPassword(
   }
 }
 
+/**
+ * 在线无损修改主密码：
+ * 1. 严格核验原主密码是否正确
+ * 2. 生成全新的 16 字节随机盐值
+ * 3. 基于 PBKDF2 100,000 轮派生全新 AES-GCM 256 位 CryptoKey
+ * 4. 重新加密测试 Token
+ * 5. 使用新密钥逐条重新加密当前所有凭据
+ * 6. 返回全新 Meta、新 CryptoKey 以及新密文条目数组
+ */
+export async function changeMasterPasswordAndReEncryptVault(
+  oldPassword: string,
+  newPassword: string,
+  currentMeta: VaultMeta,
+  currentItems: DecryptedVaultItem[]
+): Promise<{
+  newMeta: VaultMeta;
+  newMasterKey: CryptoKey;
+  newEncryptedItems: EncryptedVaultItem[];
+}> {
+  // 1. 核验旧密码
+  const authCheck = await verifyMasterPassword(oldPassword, currentMeta);
+  if (!authCheck.success) {
+    throw new Error('当前主密码验证失败，无法修改主密码');
+  }
+
+  // 2. 生成新盐值并派生新密钥
+  const newSalt = window.crypto.getRandomValues(new Uint8Array(16));
+  const newMasterKey = await deriveKeyFromMasterPassword(newPassword, newSalt);
+
+  // 3. 加密新验证 Token
+  const newTestIv = window.crypto.getRandomValues(new Uint8Array(12));
+  const tokenBuffer = textEncoder.encode(TEST_TOKEN_CONST);
+  const newTestCipherBuffer = await window.crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: newTestIv },
+    newMasterKey,
+    tokenBuffer
+  );
+
+  const now = new Date().toISOString();
+  const newMeta: VaultMeta = {
+    ...currentMeta,
+    salt: bufferToBase64(newSalt),
+    testCipher: bufferToBase64(new Uint8Array(newTestCipherBuffer)),
+    testIv: bufferToBase64(newTestIv),
+    updatedAt: now
+  };
+
+  // 4. 使用新密钥逐条重新加密所有条目
+  const newEncryptedItems: EncryptedVaultItem[] = [];
+  for (const item of currentItems) {
+    const reEncrypted = await encryptVaultItem(newMasterKey, item, item.id);
+    newEncryptedItems.push(reEncrypted);
+  }
+
+  return {
+    newMeta,
+    newMasterKey,
+    newEncryptedItems
+  };
+}
+
 const SECONDARY_TOKEN_CONST = 'SAFEVAULT_SECONDARY_AUTH_VERIFIED_TOKEN';
 
 /**
