@@ -311,6 +311,22 @@ const server = http.createServer(async (req, res) => {
           return sendJson(res, 400, { success: false, message: '推送数据必须包含 vaultMeta' });
         }
 
+        // 自动历史快照备份：覆盖前存档当前版本，支持极空间磁盘级防误删回滚
+        if (currentUser.vaultMeta && Array.isArray(currentUser.encryptedItems) && currentUser.encryptedItems.length > 0) {
+          if (!currentUser.snapshots) currentUser.snapshots = [];
+          currentUser.snapshots.unshift({
+            version: currentUser.version || 1,
+            updatedAt: currentUser.updatedAt || new Date().toISOString(),
+            itemsCount: currentUser.encryptedItems.length,
+            vaultMeta: currentUser.vaultMeta,
+            encryptedItems: currentUser.encryptedItems
+          });
+          // 最多保留最近 10 个历史版本快照
+          if (currentUser.snapshots.length > 10) {
+            currentUser.snapshots = currentUser.snapshots.slice(0, 10);
+          }
+        }
+
         currentUser.vaultMeta = vaultMeta;
         currentUser.encryptedItems = Array.isArray(encryptedItems) ? encryptedItems : [];
         currentUser.version = (currentUser.version || 0) + 1;

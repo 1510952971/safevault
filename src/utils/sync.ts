@@ -7,7 +7,7 @@
  * 3. 离线优先：断网或脱机时使用本地存储，联机时一键双向安全同步。
  */
 
-import { VaultMeta, EncryptedVaultItem } from '../types/vault';
+import { VaultMeta, EncryptedVaultItem, VaultItem } from '../types/vault';
 
 export interface NasSyncConfig {
   serverUrl: string;       // 极空间 NAS 网址（局域网 IP 如 http://192.168.1.100:8088 或 远程外网网址）
@@ -396,3 +396,70 @@ export async function pullVaultFromNas(
     return { success: false, message: err instanceof Error ? err.message : '网络通信异常' };
   }
 }
+
+/**
+ * 智能双向合并本地与云端密码凭据（Smart Two-Way Merge）
+ * 核心安全规则：
+ * 1. 绝不盲目覆盖或物理抹除：本地独有或云端独有的条目 100% 全部并入；
+ * 2. 相同条目 (按 id 匹配)：以最后更新时间 (updatedAt) 较新者为准保留最新修改；
+ * 3. 彻底杜绝“数据少的设备推送导致数据多的云端被覆盖删除”的问题。
+ */
+export function mergeVaultItems(
+  localItems: VaultItem[],
+  remoteItems: VaultItem[]
+): {
+  mergedItems: VaultItem[];
+  addedFromRemote: number;
+  updatedFromRemote: number;
+  retainedLocalOnly: number;
+} {
+  const itemMap = new Map<string, VaultItem>();
+  let addedFromRemote = 0;
+  let updatedFromRemote = 0;
+
+  // 1. 先载入本地所有条目
+  for (const item of localItems) {
+    if (item && item.id) {
+      itemMap.set(item.id, { ...item });
+    }
+  }
+
+  // 2. 融合云端条目
+  for (const remoteItem of remoteItems) {
+    if (!remoteItem || !remoteItem.id) continue;
+
+    if (!itemMap.has(remoteItem.id)) {
+      // 本地无此条目，属于云端新增 -> 吸收合入
+      itemMap.set(remoteItem.id, { ...remoteItem });
+      addedFromRemote++;
+    } else {
+      // 双方都有同一条凭据 -> 比较 updatedAt 时间戳
+      const localItem = itemMap.get(remoteItem.id)!;
+      const localTime = new Date(localItem.updatedAt || 0).getTime();
+      const remoteTime = new Date(remoteItem.updatedAt || 0).getTime();
+
+      if (remoteTime > localTime) {
+        // 云端修改版本更新 -> 采用云端最新版本
+        itemMap.set(remoteItem.id, { ...remoteItem });
+        updatedFromRemote++;
+      }
+    }
+  }
+
+  // 3. 计算本地独有条目数
+  const remoteIdSet = new Set(remoteItems.map(r => r.id));
+  let retainedLocalOnly = 0;
+  for (const localItem of localItems) {
+    if (localItem?.id && !remoteIdSet.has(localItem.id)) {
+      retainedLocalOnly++;
+    }
+  }
+
+  return {
+    mergedItems: Array.from(itemMap.values()),
+    addedFromRemote,
+    updatedFromRemote,
+    retainedLocalOnly
+  };
+}
+

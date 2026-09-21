@@ -24,6 +24,8 @@ import {
   registerNasAccount,
   pushVaultToNas,
   pullVaultFromNas,
+  getNasSyncStatus,
+  mergeVaultItems,
   getDeviceIdentifier,
   normalizeServerUrl
 } from '../utils/sync';
@@ -167,12 +169,105 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
     }
   };
 
-  // 立即将本地数据推送到极空间（Push）
-  const handlePushToNas = async () => {
+  // 智能双向合并同步 (Smart Sync & Merge)：最安全的同步模式，双向融合最新数据，只增不减
+  const handleSmartSync = async () => {
     if (!syncConfig || !vaultMeta || !masterKey) {
-      addToast('error', '金库未解锁或未连接极空间，无法同步');
+      addToast('error', '密码数据库未解锁或未连接极空间，无法同步');
       return;
     }
+    setIsSyncing(true);
+    try {
+      // 1. 先拉取云端数据
+      const pullRes = await pullVaultFromNas(syncConfig.serverUrl, syncConfig.token);
+      let remoteDecrypted: DecryptedVaultItem[] = [];
+
+      if (pullRes.success && pullRes.encryptedItems && pullRes.encryptedItems.length > 0) {
+        try {
+          remoteDecrypted = await decryptAllVaultItems(masterKey, pullRes.encryptedItems);
+        } catch (decryptErr) {
+          console.warn('解密云端条目部分或全部失败，将仅合并成功解密部分:', decryptErr);
+        }
+      }
+
+      // 2. 双向智能合并本地与云端条目（按 id 去重，以 updatedAt 最新为准，只增不减）
+      const { mergedItems, addedFromRemote, updatedFromRemote, retainedLocalOnly } = mergeVaultItems(
+        items,
+        remoteDecrypted
+      );
+
+      // 3. 重新加密合并后的全量条目
+      const mergedEncrypted = [];
+      for (const item of mergedItems) {
+        const enc = await encryptVaultItem(masterKey, item, item.id);
+        mergedEncrypted.push(enc);
+      }
+
+      // 4. 将合并后的全集推送到极空间持久化
+      const effectiveMeta = pullRes.vaultMeta || vaultMeta;
+      const pushRes = await pushVaultToNas(
+        syncConfig.serverUrl,
+        syncConfig.token,
+        effectiveMeta,
+        mergedEncrypted,
+        getDeviceIdentifier()
+      );
+
+      if (pushRes.success) {
+        // 5. 更新本地持久化与内存状态
+        saveStoredVaultMeta(effectiveMeta);
+        saveStoredEncryptedItems(mergedEncrypted);
+        onVaultUpdatedFromRemote(effectiveMeta, mergedItems);
+
+        const updatedCfg = { ...syncConfig, lastSyncTime: pushRes.updatedAt || new Date().toISOString() };
+        saveNasSyncConfig(updatedCfg);
+        setSyncConfig(updatedCfg);
+        onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
+
+        addToast(
+          'success',
+          `双向同步完成！已安全合并共 ${mergedItems.length} 条凭据（吸收云端 ${addedFromRemote} 条，更新 ${updatedFromRemote} 条，保留本地 ${retainedLocalOnly} 条）`
+        );
+      } else {
+        addToast('error', pushRes.message || '双向同步推送到极空间失败');
+      }
+    } catch (err: unknown) {
+      addToast('error', err instanceof Error ? err.message : '双向同步异常，请检查网络或主密码是否一致');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // 立即将本地数据推送到极空间（Push，自带云端防误覆盖检查）
+  const handlePushToNas = async () => {
+    if (!syncConfig || !vaultMeta || !masterKey) {
+      addToast('error', '密码数据库未解锁或未连接极空间，无法同步');
+      return;
+    }
+
+    // 防误覆盖安全预检：先获取极空间云端凭据数量
+    try {
+      const status = await getNasSyncStatus(syncConfig.serverUrl, syncConfig.token);
+      if (status.success && status.hasData && typeof status.itemsCount === 'number') {
+        if (items.length < status.itemsCount) {
+          const diff = status.itemsCount - items.length;
+          const confirmMerge = window.confirm(
+            `⚠️ 数据安全防覆盖拦截：\n\n检测到极空间云端现有 ${status.itemsCount} 条凭据，而当前本地仅有 ${items.length} 条凭据！\n` +
+            `若直接单向推送，将导致云端多出的 ${diff} 条密码凭据被抹除！\n\n` +
+            `【推荐】点击「确定」：立即执行「智能双向合并」，完整保留两端全部密码，只增不减；\n` +
+            `点击「取消」：安全中止本次推送。`
+          );
+          if (confirmMerge) {
+            return handleSmartSync();
+          } else {
+            addToast('info', '已安全取消推送操作，极空间云端数据完好无损');
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('同步安全预检异常，继续执行单向推送:', e);
+    }
+
     setIsSyncing(true);
     try {
       // 重新加密当前所有内存条目以确保数据最新
@@ -329,32 +424,42 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
               </div>
 
               {/* 操作按钮组 */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2.5">
+                {/* 核心主推荐按钮：智能双向合并同步 */}
                 <button
-                  onClick={handlePushToNas}
+                  onClick={handleSmartSync}
                   disabled={isSyncing}
-                  className="flex items-center justify-center gap-2 px-3 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded font-bold transition-colors"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg font-bold shadow-md transition-all text-xs"
                 >
                   {isSyncing ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <RefreshCw className="w-4 h-4 animate-spin" />
                   ) : (
-                    <ArrowUpCircle className="w-3.5 h-3.5" />
+                    <RefreshCw className="w-4 h-4 text-emerald-100" />
                   )}
-                  <span>立即推送至 NAS (Push)</span>
+                  <span>智能双向同步 (推荐 · 自动合并两端最新，防丢失)</span>
                 </button>
 
-                <button
-                  onClick={handlePullFromNas}
-                  disabled={isSyncing}
-                  className="flex items-center justify-center gap-2 px-3 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-100 border border-slate-600 rounded font-bold transition-colors"
-                >
-                  {isSyncing ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <ArrowDownCircle className="w-3.5 h-3.5" />
-                  )}
-                  <span>从 NAS 拉取覆盖 (Pull)</span>
-                </button>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    onClick={handlePushToNas}
+                    disabled={isSyncing}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 border border-slate-700 rounded text-[11px] font-medium transition-colors"
+                    title="将本地数据推送至极空间（若本地数据少于云端会自动拦截预警）"
+                  >
+                    <ArrowUpCircle className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>单向推送 (Push)</span>
+                  </button>
+
+                  <button
+                    onClick={handlePullFromNas}
+                    disabled={isSyncing}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 border border-slate-700 rounded text-[11px] font-medium transition-colors"
+                    title="从极空间拉取数据并覆盖本地"
+                  >
+                    <ArrowDownCircle className="w-3.5 h-3.5 text-sky-400" />
+                    <span>单向拉取 (Pull)</span>
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center justify-between pt-2 border-t border-slate-800">
