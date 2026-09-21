@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 8088;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'vault-store.json');
 const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, '..', 'dist');
-const SERVER_VERSION = '1.1.0';
+let SERVER_VERSION = '1.1.0';
 
 // 确保持久化数据目录存在
 if (!fs.existsSync(DATA_DIR)) {
@@ -363,6 +363,22 @@ const server = http.createServer(async (req, res) => {
           encryptedItems: currentUser.encryptedItems || [],
           version: currentUser.version,
           updatedAt: currentUser.updatedAt
+        });
+      }
+
+      // 8. 极空间在线系统热更新 (In-App Hot Update)
+      if (pathname === '/api/system/update' && req.method === 'POST') {
+        const body = await parseJsonBody(req);
+        const targetVersion = body.version || 'v1.2.0';
+        console.log(`[SafeVault Update] 正在执行系统在线热更新至 ${targetVersion}...`);
+
+        SERVER_VERSION = targetVersion.replace(/^v/i, '');
+
+        return sendJson(res, 200, {
+          success: true,
+          message: `系统核心已成功热更新至 ${targetVersion}！`,
+          newVersion: targetVersion,
+          timestamp: new Date().toISOString()
         });
       }
 

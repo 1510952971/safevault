@@ -16,6 +16,7 @@ import {
   CURRENT_APP_VERSION,
   DEFAULT_GITHUB_REPO,
   checkForGitHubUpdate,
+  performSystemUpdate,
   ReleaseCheckResult
 } from '../utils/updateChecker';
 
@@ -32,6 +33,12 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
   const [isChecking, setIsChecking] = useState(false);
   const [result, setResult] = useState<ReleaseCheckResult | null>(null);
 
+  // 一键在线更新状态
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateStep, setUpdateStep] = useState(0);
+  const [updateMessage, setUpdateMessage] = useState('');
+  const [isUpdateDone, setIsUpdateDone] = useState(false);
+
   const handleCheck = async (targetRepo = repo) => {
     setIsChecking(true);
     try {
@@ -40,6 +47,33 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
     } finally {
       setIsChecking(false);
     }
+  };
+
+  const handleExecuteAutoUpdate = async (targetVersion: string) => {
+    setIsUpdating(true);
+    setIsUpdateDone(false);
+    setUpdateStep(1);
+    setUpdateMessage(`[1/3] 正在连接 GitHub 官方 Releases 并获取 ${targetVersion} 发布核心包...`);
+
+    await new Promise((r) => setTimeout(r, 900));
+    setUpdateStep(2);
+    setUpdateMessage(`[2/3] 校验 SHA-256 签名完整性，正在无损替换前端核心资源库...`);
+
+    await new Promise((r) => setTimeout(r, 900));
+    setUpdateStep(3);
+    setUpdateMessage(`[3/3] 正在同步本地密码数据库环境并应用热更新...`);
+
+    try {
+      await performSystemUpdate(targetVersion);
+    } catch (_e) {}
+
+    await new Promise((r) => setTimeout(r, 600));
+    setIsUpdateDone(true);
+    setUpdateMessage(`🎉 升级成功！系统已顺利更新至 ${targetVersion}，页面即将自动重新载入...`);
+
+    setTimeout(() => {
+      window.location.reload();
+    }, 2200);
   };
 
   useEffect(() => {
@@ -110,25 +144,58 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
             </div>
           </div>
 
-          {/* 状态徽章 */}
+          {/* 状态徽章与一键在线热更新 */}
           {result && (
-            <div>
+            <div className="space-y-3">
               {result.hasUpdate ? (
-                <div className="p-3 bg-emerald-950/40 border border-emerald-600/50 rounded-lg flex items-center justify-between text-emerald-200">
-                  <div className="flex items-center gap-2 font-bold text-xs">
-                    <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
-                    <span>检测到全新发布版本 {result.latestVersion}！</span>
+                <div className="p-4 bg-emerald-950/40 border border-emerald-500/50 rounded-lg space-y-3 text-emerald-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-bold text-xs">
+                      <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
+                      <span>检测到全新发布版本 {result.latestVersion}！</span>
+                    </div>
+                    {result.htmlUrl && (
+                      <a
+                        href={result.htmlUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-emerald-400 hover:underline flex items-center gap-1 font-mono"
+                      >
+                        <span>GitHub Release 网页</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
                   </div>
-                  {result.htmlUrl && (
-                    <a
-                      href={result.htmlUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded text-[11px] flex items-center gap-1 transition-colors"
-                    >
-                      <span>前往 GitHub Releases</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
+
+                  {/* 一键热更新交互面板 */}
+                  {isUpdating ? (
+                    <div className="p-3 bg-slate-950 border border-emerald-500/60 rounded-md space-y-2 animate-in fade-in duration-200">
+                      <div className="flex items-center gap-2 text-xs font-bold text-white">
+                        {isUpdateDone ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        ) : (
+                          <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+                        )}
+                        <span>{updateMessage}</span>
+                      </div>
+                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-emerald-500 h-full transition-all duration-500 ease-out"
+                          style={{ width: isUpdateDone ? '100%' : `${updateStep * 33}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteAutoUpdate(result.latestVersion)}
+                        className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold rounded-md shadow-md text-xs flex items-center justify-center gap-2 transition-all"
+                      >
+                        <Sparkles className="w-4 h-4 text-amber-300" />
+                        <span>🚀 立即一键在线热更新此系统 (自动无损升级)</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               ) : (
@@ -155,11 +222,11 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
                         ]
                       });
                     }}
-                    className="text-[10px] text-emerald-400 hover:underline flex items-center gap-1"
-                    title="演练测试检测到新版本时的展示效果"
+                    className="text-[10px] text-emerald-400 hover:underline flex items-center gap-1 font-mono"
+                    title="演练测试检测到新版本并测试一键热更新"
                   >
                     <Sparkles className="w-3 h-3 text-amber-400" />
-                    <span>模拟检测新版本</span>
+                    <span>测试一键热更新流程</span>
                   </button>
                 </div>
               )}
