@@ -1,33 +1,9 @@
 <svg width="512" height="512" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="svBgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stopColor="#1e293b" />
-      <stop offset="60%" stopColor="#0f172a" />
-      <stop offset="100%" stopColor="#020617" />
-    </linearGradient>
-    <linearGradient id="svLimeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stopColor="#d9f99d" />
-      <stop offset="40%" stopColor="#c8f135" />
-      <stop offset="100%" stopColor="#10b981" />
-    </linearGradient>
-    <linearGradient id="svArmorGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stopColor="#475569" />
-      <stop offset="100%" stopColor="#1e293b" />
-    </linearGradient>
-  </defs>
-  <path d="M 38,10 L 90,10 L 118,38 L 118,90 L 90,118 L 38,118 L 10,90 L 10,38 Z" fill="url(#svBgGrad)" stroke="#334155" stroke-width="2.5" />
-  <circle cx="28" cy="28" r="2.5" fill="#64748b" />
-  <circle cx="100" cy="28" r="2.5" fill="#64748b" />
-  <circle cx="28" cy="100" r="2.5" fill="#64748b" />
-  <circle cx="100" cy="100" r="2.5" fill="#64748b" />
-  <path d="M 64,22 L 102,44 L 102,84 L 64,106 L 26,84 L 26,44 Z" fill="url(#svArmorGrad)" fill-opacity="0.8" stroke="#475569" stroke-width="2" />
-  <path d="M 64,26 L 98,46 L 98,82 L 64,102 L 30,82 L 30,46 Z" stroke="url(#svLimeGrad)" stroke-width="2.5" stroke-linejoin="round" />
-  <circle cx="64" cy="64" r="24" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 4" stroke-opacity="0.5" />
-  <circle cx="64" cy="64" r="18" stroke="url(#svLimeGrad)" stroke-width="1.5" stroke-opacity="0.7" stroke-dasharray="12 18" />
-  <path d="M 52,56 V 46 C 52,39.37 57.37,34 64,34 C 70.63,34 76,39.37 76,46 V 56" stroke="url(#svLimeGrad)" stroke-width="3.5" stroke-linecap="round" />
-  <rect x="46" y="54" width="36" height="30" rx="4" fill="#0f172a" stroke="url(#svLimeGrad)" stroke-width="2" />
-  <circle cx="64" cy="65" r="4" fill="url(#svLimeGrad)" />
-  <path d="M 62,67 L 60,76 H 68 L 66,67 Z" fill="url(#svLimeGrad)" />
-  <path d="M 88,96 L 94,102" stroke="url(#svLimeGrad)" stroke-width="2.5" stroke-linecap="round" />
-  <path d="M 94,90 L 102,98" stroke="url(#svLimeGrad)" stroke-width="2.5" stroke-linecap="round" />
+  <rect width="128" height="128" rx="28" fill="#090d16" />
+  <rect width="126" height="126" x="1" y="1" rx="27" stroke="#1e293b" stroke-width="2" />
+  <path d="M 46 54 V 42 C 46 32.06 54.06 24 64 24 C 73.94 24 82 32.06 82 42 V 54" stroke="#c8f135" stroke-width="8" stroke-linecap="round" />
+  <path d="M 34 50 H 94 V 74 C 94 91 64 104 64 104 C 64 104 34 91 34 74 Z" fill="#111827" stroke="#c8f135" stroke-width="5" stroke-linejoin="round" />
+  <circle cx="64" cy="69" r="4.5" fill="#c8f135" />
+  <rect x="61.5" y="73.5" width="5" height="10" rx="2.5" fill="#c8f135" />
+  <circle cx="106" cy="22" r="3" fill="#c8f135" />
 </svg>
