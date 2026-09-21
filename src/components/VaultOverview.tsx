@@ -64,27 +64,19 @@ export const VaultOverview: React.FC<VaultOverviewProps> = ({
         {/* 已收录凭据量 */}
         <div>
           <span className="text-xs font-mono text-slate-400 block mb-1">
-            已收录密码凭据 // TOTAL CREDENTIALS
+            已收录密码凭据 // TOTAL STORED
           </span>
-          <div className="flex items-baseline gap-2">
+          <div className="flex items-baseline gap-1.5">
             <span className="text-4xl sm:text-5xl font-extrabold font-mono text-slate-900 tracking-tight">
               {totalItems}
             </span>
-            <span className="text-sm font-mono text-slate-400 flex items-center gap-1.5">
+            <span className="text-base font-mono text-slate-400">
               项
-              <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                无上限 · 自由扩容
-              </span>
             </span>
           </div>
           {/* 战术横向状态指示条 */}
-          <div className="flex items-center gap-2 mt-2">
-            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full bg-slate-800 rounded-full w-full" />
-            </div>
-            <span className="text-[10px] font-mono text-slate-400">
-              本地高密存储 (∞)
-            </span>
+          <div className="relative w-full h-1.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
+            <div className="h-full bg-slate-800 rounded-full w-full" />
           </div>
         </div>
 
