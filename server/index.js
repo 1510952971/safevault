@@ -52,14 +52,25 @@ function loadDatabase() {
   }
 }
 
-// 原子写入持久化数据
+// 原子写入持久化数据 (带 Windows 跨平台锁容错)
 function saveDatabase() {
+  const content = JSON.stringify(db, null, 2);
   try {
     const tmpFile = `${DB_FILE}.tmp.${Date.now()}`;
-    fs.writeFileSync(tmpFile, JSON.stringify(db, null, 2), 'utf-8');
-    fs.renameSync(tmpFile, DB_FILE);
+    fs.writeFileSync(tmpFile, content, 'utf-8');
+    try {
+      fs.renameSync(tmpFile, DB_FILE);
+    } catch (_renameErr) {
+      // Windows 锁竞争回退直接覆盖写入
+      fs.writeFileSync(DB_FILE, content, 'utf-8');
+      try { fs.unlinkSync(tmpFile); } catch {}
+    }
   } catch (e) {
-    console.error('[SafeVault DB] 持久化落盘失败:', e);
+    try {
+      fs.writeFileSync(DB_FILE, content, 'utf-8');
+    } catch (directErr) {
+      console.error('[SafeVault DB] 持久化落盘失败:', directErr);
+    }
   }
 }
 

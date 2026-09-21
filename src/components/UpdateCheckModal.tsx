@@ -132,9 +132,35 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
                   )}
                 </div>
               ) : (
-                <div className="p-3 bg-slate-800/40 border border-slate-700/80 rounded-lg flex items-center gap-2 text-slate-400 text-xs">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>当前金库与客户端已是最新版本，无需更新。</span>
+                <div className="p-3 bg-slate-800/40 border border-slate-700/80 rounded-lg flex items-center justify-between text-slate-400 text-xs">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>当前密码数据库与客户端已是最新版本，无需更新。</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResult({
+                        success: true,
+                        currentVersion: CURRENT_APP_VERSION,
+                        latestVersion: 'v1.2.0',
+                        hasUpdate: true,
+                        releaseName: 'SafeVault v1.2.0 重大功能升级发布',
+                        releaseNotes: '【功能更新】\n1. 新增极空间 NAS 容器多端智能双向合并与防覆盖保护机制；\n2. 优化桌面端 Electron 原生独立窗口运行体验；\n3. 增强零知识端到端加密与 GitHub 自动更新检测；\n4. 支持断网离线缓存与 PWA 沉浸式小程序。',
+                        publishedAt: new Date().toISOString(),
+                        htmlUrl: 'https://github.com/goupfu/safevault/releases',
+                        assets: [
+                          { name: 'SafeVault-Setup-v1.2.0.exe', downloadUrl: 'https://github.com/goupfu/safevault/releases', size: 68421000 },
+                          { name: 'SafeVault-Mobile-v1.2.0.apk', downloadUrl: 'https://github.com/goupfu/safevault/releases', size: 12450000 }
+                        ]
+                      });
+                    }}
+                    className="text-[10px] text-emerald-400 hover:underline flex items-center gap-1"
+                    title="演练测试检测到新版本时的展示效果"
+                  >
+                    <Sparkles className="w-3 h-3 text-amber-400" />
+                    <span>模拟检测新版本</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -191,10 +217,10 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
               <span>极空间 NAS 容器无损更新指南</span>
             </div>
             <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-400 leading-relaxed font-mono">
-              <li>打开极空间客户端 ➔ 进入「Docker」应用 ➔ 点击「镜像库」拉取最新镜像；</li>
-              <li>在「容器」列表中找到 <code className="text-slate-300">safevault-nas</code>，点击停止；</li>
-              <li>点击「更多」➔ 选择「重置/更新容器」即可完成秒级升级；</li>
-              <li><strong className="text-emerald-400">零丢数据保障</strong>：所有密码库密文保存在已映射的极空间文件夹中，更新镜像绝不丢失任何数据！</li>
+              <li>打开极空间客户端 ➔ 进入「Docker」应用 ➔ 在「容器」列表中找到 <code className="text-slate-300">safevault</code>；</li>
+              <li>将电脑上最新的 <code className="text-slate-300">deploy/zspace-package</code> 中的 <code className="text-slate-300">dist</code> 和 <code className="text-slate-300">server</code> 复制覆盖极空间目录；</li>
+              <li>在极空间容器列表中点击「重启」即可秒级无损更新生效；</li>
+              <li><strong className="text-emerald-400">零丢数据保障</strong>：所有密码数据库密文保存在映射的 <code className="text-slate-300">data/</code> 文件夹中，更新绝不丢失任何数据！</li>
             </ol>
           </div>
 
