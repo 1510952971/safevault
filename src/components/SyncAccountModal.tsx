@@ -143,7 +143,12 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
           addToast('success', '极空间账号注册并绑定成功！');
           onSyncStatusChanged?.(true, null);
         } else {
-          addToast('error', res.message || '注册失败');
+          if (res.message && (res.message.includes('已存在') || res.message.includes('409'))) {
+            addToast('info', '💡 该账号在极空间中已存在，已自动为您切换至【登录】模式！');
+            setActiveTab('login');
+          } else {
+            addToast('error', res.message || '注册失败');
+          }
         }
       } else {
         const res = await loginNasAccount(serverUrl, username, masterPassword);
@@ -337,10 +342,18 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
 
   // 断开极空间连接
   const handleDisconnect = () => {
+    const confirmed = window.confirm(
+      '⚠️ 确定要断开此设备与极空间 NAS 的同步绑定吗？\n\n' +
+      '• 断开后，当前设备将恢复为单机离线模式；\n' +
+      '• 您的极空间账号与云端凭据数据完好无损，不会丢失；\n' +
+      '• 如需重新连接，直接使用已有账号【登录】即可，无需重新注册。'
+    );
+    if (!confirmed) return;
+
     saveNasSyncConfig(null);
     setSyncConfig(null);
     onSyncStatusChanged?.(false, null);
-    addToast('info', '已断开极空间 NAS 连接，恢复为单机离线模式');
+    addToast('info', '已断开极空间 NAS 连接，当前设备已恢复为单机离线模式');
   };
 
   return (
@@ -462,17 +475,19 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-                <div className="flex items-center gap-2">
-                  <Smartphone className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="text-[11px] text-slate-400">可在手机端输入相同网址与账号登录实现无缝双向互通</span>
+              <div className="flex items-center justify-between pt-2.5 border-t border-slate-800">
+                <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>手机端或其他设备输入相同账号登录即可互通</span>
                 </div>
                 <button
+                  type="button"
                   onClick={handleDisconnect}
-                  className="flex items-center gap-1 text-[11px] text-rose-400 hover:text-rose-300 transition-colors"
+                  className="px-2.5 py-1 text-[11px] text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 border border-rose-800/50 rounded transition-colors flex items-center gap-1"
+                  title="仅解除此设备与极空间的同步绑定，云端账号与数据不受影响"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  <span>断开连接</span>
+                  <span>断开此设备绑定</span>
                 </button>
               </div>
             </div>
@@ -505,6 +520,16 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                   注册新同步账号
                 </button>
               </div>
+
+              {activeTab === 'register' && (
+                <div className="p-2.5 bg-amber-950/40 border border-amber-800/60 rounded text-amber-200 text-[11px] leading-relaxed flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-amber-300">温馨提示：</span>
+                    同步账号在极空间 NAS 上<strong>只需注册一次</strong>！如果您此前已在电脑端或其他设备注册过，请直接切换到<strong>「登录已有同步账号」</strong>登录，切勿重复注册。
+                  </div>
+                </div>
+              )}
 
               {/* 极空间 NAS 访问网址 */}
               <div>
@@ -590,10 +615,11 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
         <div className="px-5 py-3 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-500 font-mono">
           <span>SAFEVAULT SYNC PROTOCOL V1.1 // ZERO-KNOWLEDGE</span>
           <button
+            type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-white transition-colors"
+            className="px-3.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-700 transition-colors text-xs font-sans"
           >
-            关闭
+            关闭窗口
           </button>
         </div>
       </div>
