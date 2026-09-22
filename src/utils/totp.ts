@@ -71,7 +71,7 @@ export async function generateTotpCode(
   // 导入 HMAC-SHA1 密钥
   const cryptoKey = await window.crypto.subtle.importKey(
     'raw',
-    keyBytes,
+    keyBytes as BufferSource,
     { name: 'HMAC', hash: { name: 'SHA-1' } },
     false,
     ['sign']

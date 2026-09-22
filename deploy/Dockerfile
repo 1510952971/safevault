@@ -22,6 +22,8 @@ ENV NODE_ENV=production
 ENV PORT=8088
 ENV DATA_DIR=/app/data
 ENV STATIC_DIR=/app/dist
+ENV REQUIRE_HTTPS=false
+ENV CORS_ORIGIN=http://localhost:3000
 
 # 数据卷挂载点 (极空间 NAS 映射目录)
 VOLUME ["/app/data"]

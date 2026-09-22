@@ -14,7 +14,7 @@ export interface NasSyncConfig {
   localUrl?: string;       // 备用：局域网内网地址 (例如 http://192.168.1.100:8088)
   remoteUrl?: string;      // 备用：远程外网地址 (例如 https://xxx.zspace.cn:8088)
   username: string;        // 同步账号
-  token: string;           // 极空间颁发的会话 Token
+  token: string;           // 兼容旧版本；新版本实际使用 HttpOnly Cookie
   salt: string;            // 客户端账户盐值
   lastSyncTime: string | null; // 最后一次成功同步的时间戳
   autoSync: boolean;       // 是否开启启动/解锁时自动同步
@@ -69,6 +69,19 @@ export function normalizeServerUrl(rawUrl?: string): string {
   if (!/^https?:\/\//i.test(url)) {
     const protocol = (typeof window !== 'undefined' && window.location?.protocol) || 'http:';
     url = `${protocol}//${url}`;
+  }
+  // 公网同步禁止明文 HTTP；localhost 和 RFC1918 局域网地址保留，方便本机/NAS 内网部署。
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname;
+    const isPrivate = host === 'localhost' || host === '127.0.0.1' || host === '::1'
+      || /^10\./.test(host) || /^192\.168\./.test(host)
+      || /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+    if (parsed.protocol === 'http:' && !isPrivate && host !== window.location.hostname) {
+      throw new Error('远程同步必须使用 HTTPS；HTTP 仅允许本机或局域网地址');
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('必须使用 HTTPS')) throw error;
   }
   return url.replace(/\/+$/, '');
 }
@@ -180,7 +193,7 @@ export async function getNasSalt(serverUrl: string, username: string): Promise<{
 }> {
   try {
     const cleanUrl = normalizeServerUrl(serverUrl);
-    const res = await fetch(`${cleanUrl}/api/auth/salt?username=${encodeURIComponent(username.trim())}`);
+    const res = await fetch(`${cleanUrl}/api/auth/salt?username=${encodeURIComponent(username.trim())}`, { credentials: 'include' });
     const data = await res.json();
     if (!res.ok || !data.success) {
       return { success: false, message: data.message || '获取账号特征失败' };
@@ -189,6 +202,18 @@ export async function getNasSalt(serverUrl: string, username: string): Promise<{
   } catch (err: unknown) {
     return { success: false, message: err instanceof Error ? err.message : '请求异常' };
   }
+}
+
+async function createChallengeResponse(authHash: string, challenge: string): Promise<string> {
+  const key = await window.crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(authHash), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const signature = await window.crypto.subtle.sign('HMAC', key, new TextEncoder().encode(challenge));
+  return bufferToHex(new Uint8Array(signature));
+}
+
+function bufferToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -212,6 +237,7 @@ export async function registerNasAccount(
 
     const res = await fetch(`${cleanUrl}/api/auth/register`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: cleanUser,
@@ -227,7 +253,6 @@ export async function registerNasAccount(
 
     return {
       success: true,
-      token: data.token,
       salt,
       message: '极空间同步账号注册成功'
     };
@@ -262,13 +287,22 @@ export async function loginNasAccount(
     // 2. 本地计算 AuthHash
     const authHash = await deriveAuthHash(cleanUser, masterPassword, saltRes.salt);
 
+    const challengeRes = await fetch(`${cleanUrl}/api/auth/challenge?username=${encodeURIComponent(cleanUser)}`, { credentials: 'include' });
+    const challengeData = await challengeRes.json();
+    if (!challengeRes.ok || !challengeData.success || !challengeData.challenge) {
+      return { success: false, message: challengeData.message || '获取登录挑战失败' };
+    }
+    const challengeResponse = await createChallengeResponse(authHash, challengeData.challenge);
+
     // 3. 请求登录
     const res = await fetch(`${cleanUrl}/api/auth/login`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: cleanUser,
-        authHash
+        challenge: challengeData.challenge,
+        challengeResponse
       })
     });
 
@@ -279,12 +313,22 @@ export async function loginNasAccount(
 
     return {
       success: true,
-      token: data.token,
       salt: saltRes.salt,
       message: '极空间登录成功'
     };
   } catch (err: unknown) {
     return { success: false, message: err instanceof Error ? err.message : '网络请求失败' };
+  }
+}
+
+export async function logoutNasAccount(serverUrl: string, token = ''): Promise<void> {
+  try {
+    const cleanUrl = normalizeServerUrl(serverUrl);
+    await fetch(`${cleanUrl}/api/auth/logout`, {
+      method: 'POST', credentials: 'include', headers: { Authorization: `Bearer ${token}` }
+    });
+  } catch {
+    // 本地退出仍然继续，网络异常不应阻塞用户退出。
   }
 }
 
@@ -305,6 +349,7 @@ export async function getNasSyncStatus(
   try {
     const cleanUrl = normalizeServerUrl(serverUrl);
     const res = await fetch(`${cleanUrl}/api/sync/status`, {
+      credentials: 'include',
       headers: { Authorization: `Bearer ${token}` }
     });
     const data = await res.json();
@@ -345,6 +390,7 @@ export async function pushVaultToNas(
 
     const res = await fetch(`${cleanUrl}/api/sync/push`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
@@ -390,6 +436,7 @@ export async function pullVaultFromNas(
   try {
     const cleanUrl = normalizeServerUrl(serverUrl);
     const res = await fetch(`${cleanUrl}/api/sync/pull`, {
+      credentials: 'include',
       headers: { Authorization: `Bearer ${token}` }
     });
 

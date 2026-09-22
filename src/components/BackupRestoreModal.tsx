@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { X, Download, Upload, ShieldAlert, FileCheck, AlertTriangle, FileSpreadsheet } from 'lucide-react';
-import { exportVaultBackup, parseAndValidateBackup, parseCsvPasswords, exportVaultAsCsv } from '../utils/storage';
+import { exportEncryptedVaultBackup, parseAndDecryptBackup, parseCsvPasswords, exportVaultAsCsv } from '../utils/storage';
 import { VaultBackupFile, DecryptedVaultItem } from '../types/vault';
 
 interface BackupRestoreModalProps {
@@ -26,6 +26,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [restoreAttempts, setRestoreAttempts] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const csvFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -44,7 +45,9 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
       setAuthError('');
     } else {
       try {
-        exportVaultBackup();
+        const password = window.prompt('请输入主密码，用于加密备份：');
+        if (!password) return;
+        void exportEncryptedVaultBackup(password);
       } catch (e: unknown) {
         alert(e instanceof Error ? e.message : '导出备份失败');
       }
@@ -97,7 +100,7 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
 
     if (type === 'json') {
       try {
-        exportVaultBackup();
+        await exportEncryptedVaultBackup(authPassword);
       } catch (e: unknown) {
         alert(e instanceof Error ? e.message : '导出备份失败');
       }
@@ -107,6 +110,10 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
   };
 
   const handleExecuteRestore = async () => {
+    if (restoreAttempts >= 5) {
+      setErrorMessage('备份密码错误次数过多，请关闭并重新打开恢复窗口后再试');
+      return;
+    }
     if (!selectedFile) {
       setErrorMessage('请先选择 .safevault.json 备份文件');
       return;
@@ -116,10 +123,13 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
       setIsProcessing(true);
       setErrorMessage('');
       const text = await selectedFile.text();
-      const backup = parseAndValidateBackup(text);
+      const password = window.prompt('请输入该备份导出时使用的主密码：');
+      if (!password) throw new Error('未输入备份主密码');
+      const backup = await parseAndDecryptBackup(text, password);
       onRestoreSuccess(backup);
       onClose();
     } catch (err: unknown) {
+      setRestoreAttempts((attempts) => attempts + 1);
       setErrorMessage(err instanceof Error ? err.message : '解析备份文件失败');
     } finally {
       setIsProcessing(false);

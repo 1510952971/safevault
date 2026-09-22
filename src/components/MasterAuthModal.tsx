@@ -78,6 +78,8 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
   onResetVault,
   onInitializeStandalone
 }) => {
+  void isInitialized;
+  void onResetVault;
   // 未登录时的选项卡：login (登录已有账号) | register (注册新账号) | standalone (离线单机)
   const [authTab, setAuthTab] = useState<'login' | 'register' | 'standalone'>('login');
 

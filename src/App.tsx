@@ -38,6 +38,7 @@ import {
   pushVaultToNas,
   normalizeServerUrl,
   getDeviceIdentifier,
+  logoutNasAccount,
   mergeVaultItems,
   NasSyncConfig
 } from './utils/sync';
@@ -222,6 +223,7 @@ export const App: React.FC = () => {
     setVaultMeta(updatedMeta);
     lastActivityRef.current = Date.now();
     setRemainingLockSeconds(minutes * 60);
+    if (masterKey) autoPushToNas(updatedMeta, items, masterKey);
     addToast('info', `已将自动锁屏时长设置为 ${minutes} 分钟`);
   };
 
@@ -238,14 +240,15 @@ export const App: React.FC = () => {
 
       // 1. 调用极空间登录 API (通过零知识 AuthHash，主密码绝不上云)
       const loginRes = await loginNasAccount(cleanUrl, cleanUser, masterPassword);
-      if (!loginRes.success || !loginRes.token || !loginRes.salt) {
+      if (!loginRes.success || !loginRes.salt) {
         const msg = loginRes.message || '登录失败：账号或主密码不匹配';
         addToast('error', msg);
         return { success: false, message: msg };
       }
 
       // 2. 拉取该账号在极空间的专属云端金库
-      const pullRes = await pullVaultFromNas(cleanUrl, loginRes.token);
+      const sessionToken = loginRes.token || '';
+      const pullRes = await pullVaultFromNas(cleanUrl, sessionToken);
       if (!pullRes.success) {
         const msg = pullRes.message || '拉取云端密码库失败';
         addToast('error', msg);
@@ -295,7 +298,7 @@ export const App: React.FC = () => {
         for (const it of decryptedList) {
           encList.push(await encryptVaultItem(derivedKey, it, it.id));
         }
-        await pushVaultToNas(cleanUrl, loginRes.token, effectiveMeta, encList, getDeviceIdentifier());
+        await pushVaultToNas(cleanUrl, sessionToken, effectiveMeta, encList, getDeviceIdentifier());
       }
 
       // 3. 持久化到本地存储
@@ -309,7 +312,7 @@ export const App: React.FC = () => {
       const newCfg: NasSyncConfig = {
         serverUrl: cleanUrl,
         username: cleanUser,
-        token: loginRes.token,
+        token: sessionToken,
         salt: loginRes.salt,
         lastSyncTime: pullRes.updatedAt || new Date().toISOString(),
         autoSync: true
@@ -347,7 +350,7 @@ export const App: React.FC = () => {
 
       // 1. 注册极空间账号
       const regRes = await registerNasAccount(cleanUrl, cleanUser, masterPassword);
-      if (!regRes.success || !regRes.token || !regRes.salt) {
+      if (!regRes.success || !regRes.salt) {
         const msg = regRes.message || '注册失败';
         addToast('error', msg);
         return { success: false, message: msg };
@@ -380,7 +383,8 @@ export const App: React.FC = () => {
       }
 
       // 3. 推送初始元数据上云开户
-      await pushVaultToNas(cleanUrl, regRes.token, metaToUse, initialEncrypted, getDeviceIdentifier());
+      const sessionToken = regRes.token || '';
+      await pushVaultToNas(cleanUrl, sessionToken, metaToUse, initialEncrypted, getDeviceIdentifier());
 
       saveStoredVaultMeta(metaToUse);
       saveStoredEncryptedItems(initialEncrypted);
@@ -388,7 +392,7 @@ export const App: React.FC = () => {
       const newCfg: NasSyncConfig = {
         serverUrl: cleanUrl,
         username: cleanUser,
-        token: regRes.token,
+        token: sessionToken,
         salt: regRes.salt,
         lastSyncTime: new Date().toISOString(),
         autoSync: true
@@ -415,6 +419,8 @@ export const App: React.FC = () => {
 
   // 3.3 彻底退出当前账号 (返回登录界面，可切换其他账号)
   const handleLogout = useCallback(() => {
+    const activeConfig = loadNasSyncConfig();
+    if (activeConfig?.token) void logoutNasAccount(activeConfig.serverUrl, activeConfig.token);
     setMasterKey(null);
     setItems([]);
     setIsLocked(true);
@@ -555,6 +561,7 @@ export const App: React.FC = () => {
       saveStoredEncryptedItems(newEncryptedItems);
       setVaultMeta(newMeta);
       setMasterKey(newMasterKey);
+      await autoPushToNas(newMeta, items, newMasterKey);
 
       addToast('success', '金库主密码已成功修改！全库凭据已全部使用新密钥重加密完成。');
       return true;
@@ -663,16 +670,21 @@ export const App: React.FC = () => {
     }
   };
 
-  // 6.2 彻底粉碎删除 (从加密介质彻底抹除)
+  // 6.2 永久删除保留墓碑，确保其他设备不会在同步时复活该条目。
   const handlePermanentDeleteItem = (id: string, title: string) => {
     if (!window.confirm(`⚠️ 危险操作：确定要彻底粉碎 [${title}] 吗？\n此凭据将从加密存储中被永久覆写抹除，不可恢复！`)) return;
 
+    const deletedAt = new Date().toISOString();
     const storedItems = loadStoredEncryptedItems();
-    const updated = storedItems.filter((i) => i.id !== id);
+    const updated = storedItems.map((i) => i.id === id
+      ? { ...i, isDeleted: true, deletedAt, updatedAt: deletedAt }
+      : i);
     saveStoredEncryptedItems(updated);
-    const newItems = items.filter((i) => i.id !== id);
+    const newItems = items.map((i) => i.id === id
+      ? { ...i, isDeleted: true, deletedAt, updatedAt: deletedAt }
+      : i);
     setItems(newItems);
-    addToast('warning', `已彻底粉碎抹除 [${title}]`);
+    addToast('warning', `已标记永久删除 [${title}]，删除状态将同步到其他设备`);
     if (vaultMeta && masterKey) {
       autoPushToNas(vaultMeta, newItems, masterKey);
     }
@@ -684,13 +696,18 @@ export const App: React.FC = () => {
     if (trashItems.length === 0) return;
     if (!window.confirm(`⚠️ 确定要清空废纸篓中的全部 ${trashItems.length} 个密码条目吗？\n此操作将不可逆地永久抹除这些加密凭据！`)) return;
 
+    const deletedAt = new Date().toISOString();
     const trashIds = new Set(trashItems.map((i) => i.id));
     const storedItems = loadStoredEncryptedItems();
-    const updated = storedItems.filter((i) => !trashIds.has(i.id));
+    const updated = storedItems.map((i) => trashIds.has(i.id)
+      ? { ...i, isDeleted: true, deletedAt, updatedAt: deletedAt }
+      : i);
     saveStoredEncryptedItems(updated);
-    const newItems = items.filter((i) => !trashIds.has(i.id));
+    const newItems = items.map((i) => trashIds.has(i.id)
+      ? { ...i, isDeleted: true, deletedAt, updatedAt: deletedAt }
+      : i);
     setItems(newItems);
-    addToast('warning', `已清空废纸篓，共抹除了 ${trashItems.length} 条凭据`);
+    addToast('warning', `已标记 ${trashItems.length} 条永久删除，删除状态将同步到其他设备`);
     if (vaultMeta && masterKey) {
       autoPushToNas(vaultMeta, newItems, masterKey);
     }
@@ -868,11 +885,13 @@ export const App: React.FC = () => {
       secondarySalt: secData.secondarySalt,
       secondaryTestCipher: secData.secondaryTestCipher,
       secondaryTestIv: secData.secondaryTestIv,
+      secondaryKdfIterations: secData.secondaryKdfIterations,
       updatedAt: new Date().toISOString()
     };
     saveStoredVaultMeta(updatedMeta);
     setVaultMeta(updatedMeta);
     setSecondaryAuthExpiry(Date.now() + 5 * 60 * 1000);
+    if (masterKey) autoPushToNas(updatedMeta, items, masterKey);
     addToast('success', '二级安全密码已开启！查看与复制明文受二次保护');
   };
 
@@ -887,11 +906,13 @@ export const App: React.FC = () => {
         secondarySalt: undefined,
         secondaryTestCipher: undefined,
         secondaryTestIv: undefined,
+        secondaryKdfIterations: undefined,
         updatedAt: new Date().toISOString()
       };
       saveStoredVaultMeta(updatedMeta);
       setVaultMeta(updatedMeta);
       setSecondaryAuthExpiry(null);
+      if (masterKey) autoPushToNas(updatedMeta, items, masterKey);
       addToast('info', '已停用二级安全密码');
       return true;
     }
@@ -913,11 +934,13 @@ export const App: React.FC = () => {
         secondarySalt: secData.secondarySalt,
         secondaryTestCipher: secData.secondaryTestCipher,
         secondaryTestIv: secData.secondaryTestIv,
+        secondaryKdfIterations: secData.secondaryKdfIterations,
         updatedAt: new Date().toISOString()
       };
       saveStoredVaultMeta(updatedMeta);
       setVaultMeta(updatedMeta);
       setSecondaryAuthExpiry(Date.now() + 5 * 60 * 1000);
+      if (masterKey) autoPushToNas(updatedMeta, items, masterKey);
       addToast('success', '二级安全密码已成功修改');
       return true;
     }

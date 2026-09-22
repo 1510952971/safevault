@@ -6,7 +6,8 @@
  * - 备份导出与校验导入
  */
 
-import { VaultMeta, EncryptedVaultItem, VaultBackupFile, CategoryType, CategoryMeta } from '../types/vault';
+import { VaultMeta, EncryptedVaultItem, DecryptedVaultItem, VaultBackupFile, EncryptedVaultBackupFile, CategoryType, CategoryMeta } from '../types/vault';
+import { deriveKeyFromMasterPassword, bufferToBase64, base64ToBuffer, CURRENT_PBKDF2_ITERATIONS } from './crypto';
 
 const STORAGE_KEY_META = 'safevault_meta_v1';
 const STORAGE_KEY_ITEMS = 'safevault_encrypted_items_v1';
@@ -119,6 +120,47 @@ export function exportVaultBackup(): void {
   URL.revokeObjectURL(url);
 }
 
+/** 导出整体加密备份：外层不再暴露标题、网址、分类或金库元数据。 */
+export async function exportEncryptedVaultBackup(masterPassword: string): Promise<void> {
+  const meta = loadStoredVaultMeta();
+  const items = loadStoredEncryptedItems();
+  if (!meta) throw new Error('未初始化的金库无法导出备份');
+
+  const salt = window.crypto.getRandomValues(new Uint8Array(16));
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKeyFromMasterPassword(masterPassword, salt, CURRENT_PBKDF2_ITERATIONS);
+  const plaintext = new TextEncoder().encode(JSON.stringify({ meta, items }));
+  const ciphertext = await window.crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: iv as BufferSource }, key, plaintext
+  );
+  const backup: EncryptedVaultBackupFile = {
+    app: 'SafeVault', backupVersion: '2.0', kdf: 'PBKDF2-SHA256', iterations: 100000,
+    salt: bufferToBase64(salt), iv: bufferToBase64(iv),
+    ciphertext: bufferToBase64(new Uint8Array(ciphertext)), exportedAt: new Date().toISOString()
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a'); anchor.href = url;
+  anchor.download = `SafeVault_Encrypted_Backup_${new Date().toISOString().slice(0, 10)}.safevault.json`;
+  document.body.appendChild(anchor); anchor.click(); document.body.removeChild(anchor); URL.revokeObjectURL(url);
+}
+
+export async function parseAndDecryptBackup(jsonText: string, masterPassword: string): Promise<VaultBackupFile> {
+  const parsed = JSON.parse(jsonText) as Partial<EncryptedVaultBackupFile>;
+  if (parsed.app !== 'SafeVault' || parsed.backupVersion !== '2.0' || !parsed.salt || !parsed.iv || !parsed.ciphertext) {
+    return parseAndValidateBackup(jsonText);
+  }
+  try {
+    const key = await deriveKeyFromMasterPassword(masterPassword, base64ToBuffer(parsed.salt));
+    const plaintext = await window.crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: base64ToBuffer(parsed.iv) as BufferSource }, key, base64ToBuffer(parsed.ciphertext) as BufferSource
+    );
+    return parseAndValidateBackup(new TextDecoder().decode(plaintext));
+  } catch {
+    throw new Error('备份密码错误或备份文件已被篡改');
+  }
+}
+
 /**
  * 校验并导入离线备份文件
  */
@@ -146,6 +188,7 @@ export function parseAndValidateBackup(jsonText: string): VaultBackupFile {
 
 // 剪贴板自动清理计时器引用
 let clipboardClearTimer: number | null = null;
+let clipboardValueToClear: string | null = null;
 
 /**
  * 安全复制到剪贴板，并在指定秒数后自动清空
@@ -175,18 +218,20 @@ export async function secureCopyToClipboard(
       window.clearTimeout(clipboardClearTimer);
       clipboardClearTimer = null;
     }
+    clipboardValueToClear = text;
 
     // 设置 30 秒安全清空
     clipboardClearTimer = window.setTimeout(async () => {
       try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          // 仅当剪贴板仍为此内容或覆盖为空字符串
-          await navigator.clipboard.writeText('');
+        if (navigator.clipboard && navigator.clipboard.writeText && navigator.clipboard.readText) {
+          const currentValue = await navigator.clipboard.readText();
+          if (currentValue === clipboardValueToClear) await navigator.clipboard.writeText('');
         }
       } catch (_e) {
         // 静默忽略清空失败
       }
       clipboardClearTimer = null;
+      clipboardValueToClear = null;
     }, autoClearSeconds * 1000);
 
     return true;

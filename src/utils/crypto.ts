@@ -15,8 +15,28 @@ import {
   PasswordGeneratorOptions
 } from '../types/vault';
 
-const PBKDF2_ITERATIONS = 100000;
+const LEGACY_PBKDF2_ITERATIONS = 100000;
+export const CURRENT_PBKDF2_ITERATIONS = 600000;
 const TEST_TOKEN_CONST = 'SAFEVAULT_AUTH_VERIFIED_TOKEN';
+
+function getVaultItemAssociatedData(item: {
+  id: string; title: string; category: string; website?: string;
+  isFavorite?: boolean; tags?: string[]; isDeleted?: boolean; deletedAt?: string;
+  createdAt: string; updatedAt: string;
+}): Uint8Array {
+  return textEncoder.encode(JSON.stringify({
+    id: item.id,
+    title: item.title,
+    category: item.category,
+    website: item.website || '',
+    isFavorite: !!item.isFavorite,
+    tags: item.tags || [],
+    isDeleted: !!item.isDeleted,
+    deletedAt: item.deletedAt || '',
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt
+  }));
+}
 
 // Uint8Array 与 Base64 互转
 export function bufferToBase64(buffer: Uint8Array): string {
@@ -47,7 +67,8 @@ const textDecoder = new TextDecoder();
  */
 export async function deriveKeyFromMasterPassword(
   masterPassword: string,
-  salt: Uint8Array
+  salt: Uint8Array,
+  iterations = CURRENT_PBKDF2_ITERATIONS
 ): Promise<CryptoKey> {
   const passwordBuffer = textEncoder.encode(masterPassword);
 
@@ -64,8 +85,8 @@ export async function deriveKeyFromMasterPassword(
   return await window.crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: salt,
-      iterations: PBKDF2_ITERATIONS,
+      salt: salt as BufferSource,
+      iterations,
       hash: 'SHA-256'
     },
     keyMaterial,
@@ -83,13 +104,13 @@ export async function initializeVaultMeta(
 ): Promise<{ meta: VaultMeta; masterKey: CryptoKey }> {
   try {
     const salt = window.crypto.getRandomValues(new Uint8Array(16));
-    const masterKey = await deriveKeyFromMasterPassword(masterPassword, salt);
+    const masterKey = await deriveKeyFromMasterPassword(masterPassword, salt, CURRENT_PBKDF2_ITERATIONS);
 
     // 加密测试已知常量
     const testIv = window.crypto.getRandomValues(new Uint8Array(12));
     const tokenBuffer = textEncoder.encode(TEST_TOKEN_CONST);
     const testCipherBuffer = await window.crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: testIv },
+      { name: 'AES-GCM', iv: testIv as BufferSource },
       masterKey,
       tokenBuffer
     );
@@ -100,6 +121,7 @@ export async function initializeVaultMeta(
       salt: bufferToBase64(salt),
       testCipher: bufferToBase64(new Uint8Array(testCipherBuffer)),
       testIv: bufferToBase64(testIv),
+      kdfIterations: CURRENT_PBKDF2_ITERATIONS,
       lockTimeoutMinutes: 3,
       createdAt: now,
       updatedAt: now
@@ -124,13 +146,13 @@ export async function verifyMasterPassword(
     const testIv = base64ToBuffer(meta.testIv);
     const testCipher = base64ToBuffer(meta.testCipher);
 
-    const masterKey = await deriveKeyFromMasterPassword(masterPassword, salt);
+    const masterKey = await deriveKeyFromMasterPassword(masterPassword, salt, meta.kdfIterations || LEGACY_PBKDF2_ITERATIONS);
 
     // 尝试解密测试 Token
     const decryptedBuffer = await window.crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: testIv },
+      { name: 'AES-GCM', iv: testIv as BufferSource },
       masterKey,
-      testCipher
+      testCipher as BufferSource
     );
 
     const decryptedText = textDecoder.decode(decryptedBuffer);
@@ -171,7 +193,7 @@ export async function changeMasterPasswordAndReEncryptVault(
 
   // 2. 生成新盐值并派生新密钥
   const newSalt = window.crypto.getRandomValues(new Uint8Array(16));
-  const newMasterKey = await deriveKeyFromMasterPassword(newPassword, newSalt);
+  const newMasterKey = await deriveKeyFromMasterPassword(newPassword, newSalt, CURRENT_PBKDF2_ITERATIONS);
 
   // 3. 加密新验证 Token
   const newTestIv = window.crypto.getRandomValues(new Uint8Array(12));
@@ -188,7 +210,8 @@ export async function changeMasterPasswordAndReEncryptVault(
     salt: bufferToBase64(newSalt),
     testCipher: bufferToBase64(new Uint8Array(newTestCipherBuffer)),
     testIv: bufferToBase64(newTestIv),
-    updatedAt: now
+    updatedAt: now,
+    kdfIterations: CURRENT_PBKDF2_ITERATIONS
   };
 
   // 4. 使用新密钥逐条重新加密所有条目
@@ -212,9 +235,9 @@ const SECONDARY_TOKEN_CONST = 'SAFEVAULT_SECONDARY_AUTH_VERIFIED_TOKEN';
  */
 export async function setupSecondaryPassword(
   secondaryPassword: string
-): Promise<{ secondarySalt: string; secondaryTestCipher: string; secondaryTestIv: string }> {
+): Promise<{ secondarySalt: string; secondaryTestCipher: string; secondaryTestIv: string; secondaryKdfIterations: number }> {
   const salt = window.crypto.getRandomValues(new Uint8Array(16));
-  const key = await deriveKeyFromMasterPassword(secondaryPassword, salt);
+  const key = await deriveKeyFromMasterPassword(secondaryPassword, salt, CURRENT_PBKDF2_ITERATIONS);
 
   const iv = window.crypto.getRandomValues(new Uint8Array(12));
   const tokenBytes = textEncoder.encode(SECONDARY_TOKEN_CONST);
@@ -227,7 +250,8 @@ export async function setupSecondaryPassword(
   return {
     secondarySalt: bufferToBase64(salt),
     secondaryTestCipher: bufferToBase64(new Uint8Array(cipherBuffer)),
-    secondaryTestIv: bufferToBase64(iv)
+    secondaryTestIv: bufferToBase64(iv),
+    secondaryKdfIterations: CURRENT_PBKDF2_ITERATIONS
   };
 }
 
@@ -247,11 +271,11 @@ export async function verifySecondaryPassword(
     const testIv = base64ToBuffer(meta.secondaryTestIv);
     const testCipher = base64ToBuffer(meta.secondaryTestCipher);
 
-    const key = await deriveKeyFromMasterPassword(secondaryPassword, salt);
+    const key = await deriveKeyFromMasterPassword(secondaryPassword, salt, meta.secondaryKdfIterations || LEGACY_PBKDF2_ITERATIONS);
     const decryptedBuffer = await window.crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: testIv },
+      { name: 'AES-GCM', iv: testIv as BufferSource },
       key,
-      testCipher
+      testCipher as BufferSource
     );
 
     const decryptedText = textDecoder.decode(decryptedBuffer);
@@ -281,17 +305,20 @@ export async function encryptVaultItem(
 
     const payloadBytes = textEncoder.encode(JSON.stringify(payload));
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const now = new Date().toISOString();
+    const id = existingId || (crypto.randomUUID ? crypto.randomUUID() : `item-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
+    const createdAt = (item as any).createdAt || now;
+    const associatedData = getVaultItemAssociatedData({ ...item, id, createdAt, updatedAt: now });
 
     const cipherBuffer = await window.crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
+      { name: 'AES-GCM', iv: iv as BufferSource, additionalData: associatedData as BufferSource },
       masterKey,
       payloadBytes
     );
 
-    const now = new Date().toISOString();
-
     return {
-      id: existingId || (crypto.randomUUID ? crypto.randomUUID() : `item-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`),
+      encryptionVersion: 2,
+      id,
       title: item.title,
       category: item.category,
       website: item.website || '',
@@ -301,7 +328,7 @@ export async function encryptVaultItem(
       deletedAt: item.deletedAt,
       encryptedPayload: bufferToBase64(new Uint8Array(cipherBuffer)),
       iv: bufferToBase64(iv),
-      createdAt: (item as any).createdAt || now,
+      createdAt,
       updatedAt: now
     };
   } catch (err) {
@@ -321,11 +348,20 @@ export async function decryptVaultItem(
     const iv = base64ToBuffer(encryptedItem.iv);
     const cipherBytes = base64ToBuffer(encryptedItem.encryptedPayload);
 
-    const decryptedBuffer = await window.crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      masterKey,
-      cipherBytes
-    );
+    const associatedData = getVaultItemAssociatedData(encryptedItem);
+    let decryptedBuffer: ArrayBuffer;
+    try {
+      decryptedBuffer = await window.crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv as BufferSource, additionalData: associatedData as BufferSource },
+        masterKey, cipherBytes as BufferSource
+      );
+    } catch (error) {
+      // 仅兼容明确没有版本标记的历史条目；新格式禁止回退，防止 AAD 被绕过。
+      if (encryptedItem.encryptionVersion === 2) throw error;
+      decryptedBuffer = await window.crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: iv as BufferSource }, masterKey, cipherBytes as BufferSource
+      );
+    }
 
     const jsonText = textDecoder.decode(decryptedBuffer);
     const payload: EncryptedPayload = JSON.parse(jsonText);

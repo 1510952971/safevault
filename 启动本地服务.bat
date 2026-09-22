@@ -7,6 +7,7 @@ echo.
 echo 正在启动本地开发/局域网服务并自动打开浏览器...
 echo 启动后可在电脑浏览器或手机通过局域网 IP:3000 访问。
 echo.
-start http://localhost:3000
+REM 不要在服务启动前固定打开 3000：端口被占用时 Vite 会自动切换端口，
+REM 由 Vite 的 --open 打开最终实际端口。
 call npm.cmd run dev -- --host 0.0.0.0 --port 3000 --open
 pause

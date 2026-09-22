@@ -157,11 +157,11 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
     try {
       if (activeTab === 'register') {
         const res = await registerNasAccount(serverUrl, username, masterPassword);
-        if (res.success && res.token && res.salt) {
+        if (res.success && res.salt) {
           const newCfg: NasSyncConfig = {
             serverUrl: normalizeServerUrl(serverUrl),
             username: username.trim().toLowerCase(),
-            token: res.token,
+            token: res.token || '',
             salt: res.salt,
             lastSyncTime: null,
             autoSync: isAutoSync
@@ -180,11 +180,11 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
         }
       } else {
         const res = await loginNasAccount(serverUrl, username, masterPassword);
-        if (res.success && res.token && res.salt) {
+        if (res.success && res.salt) {
           const newCfg: NasSyncConfig = {
             serverUrl: normalizeServerUrl(serverUrl),
             username: username.trim().toLowerCase(),
-            token: res.token,
+            token: res.token || '',
             salt: res.salt,
             lastSyncTime: null,
             autoSync: isAutoSync

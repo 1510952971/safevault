@@ -87,7 +87,7 @@ async function runTests() {
   // [3/5] 启动临时同步服务端并在端口 8099 运行 API 测试
   console.log('[3/5] 启动极空间轻量同步服务端 (Node.js 原生 HTTP 端口 8099)...');
   const TEST_PORT = 8099;
-  const TEST_DATA_DIR = path.join(__dirname, '..', 'data', 'test-data');
+  const TEST_DATA_DIR = path.join(__dirname, '..', 'data', `test-data-${process.pid}-${Date.now()}`);
   const TEST_DB = path.join(TEST_DATA_DIR, 'vault-store.json');
 
   if (!fs.existsSync(TEST_DATA_DIR)) {
@@ -123,8 +123,8 @@ async function runTests() {
   );
   assert.strictEqual(regRes.status, 200, '注册应当成功返回 200');
   assert.strictEqual(regRes.body.success, true);
-  const token = regRes.body.token;
-  assert.ok(token, '注册应下发 Session Token');
+  const registrationCookie = regRes.headers['set-cookie']?.[0]?.split(';')[0];
+  assert.ok(registrationCookie, '注册应下发 HttpOnly Session Cookie');
 
   // 重复注册应阻断
   const dupReg = await makeRequest(
@@ -139,17 +139,29 @@ async function runTests() {
   assert.strictEqual(saltRes.body.salt, testSalt);
 
   // 登录鉴权
+  const challengeRes = await makeRequest({ host: '127.0.0.1', port: TEST_PORT, path: `/api/auth/challenge?username=${testUser}`, method: 'GET' });
+  assert.strictEqual(challengeRes.status, 200);
+  const challengeResponse = crypto.createHmac('sha256', testAuthHash).update(challengeRes.body.challenge).digest('hex');
   const loginRes = await makeRequest(
     { host: '127.0.0.1', port: TEST_PORT, path: '/api/auth/login', method: 'POST', headers: { 'Content-Type': 'application/json' } },
-    { username: testUser, authHash: testAuthHash }
+    { username: testUser, challenge: challengeRes.body.challenge, challengeResponse }
   );
   assert.strictEqual(loginRes.status, 200);
-  assert.ok(loginRes.body.token);
+  const tokenCookie = loginRes.headers['set-cookie']?.[0]?.split(';')[0];
+  assert.ok(tokenCookie, '登录应下发 HttpOnly Session Cookie');
+
+  // 一次性挑战不得重放
+  const replayLogin = await makeRequest(
+    { host: '127.0.0.1', port: TEST_PORT, path: '/api/auth/login', method: 'POST', headers: { 'Content-Type': 'application/json' } },
+    { username: testUser, challenge: challengeRes.body.challenge, challengeResponse }
+  );
+  assert.strictEqual(replayLogin.status, 401, '已使用的登录挑战不得重放');
 
   // 错误密码摘要登录应阻断
+  const failChallenge = await makeRequest({ host: '127.0.0.1', port: TEST_PORT, path: `/api/auth/challenge?username=${testUser}`, method: 'GET' });
   const failLogin = await makeRequest(
     { host: '127.0.0.1', port: TEST_PORT, path: '/api/auth/login', method: 'POST', headers: { 'Content-Type': 'application/json' } },
-    { username: testUser, authHash: 'bad_auth_hash_000000000000000000000000000000000000000000000000000' }
+    { username: testUser, challenge: failChallenge.body.challenge, challengeResponse: 'bad_auth_response' }
   );
   assert.strictEqual(failLogin.status, 401, '错误认证散列应被阻断 401');
   console.log('  ✓ 极空间服务连通、注册、公开盐值获取与登录鉴权测试通过');
@@ -179,7 +191,7 @@ async function runTests() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
+        Cookie: tokenCookie
       }
     },
     {
@@ -198,7 +210,7 @@ async function runTests() {
     port: TEST_PORT,
     path: '/api/sync/status',
     method: 'GET',
-    headers: { Authorization: `Bearer ${token}` }
+    headers: { Cookie: tokenCookie }
   });
   assert.strictEqual(statusRes.status, 200);
   assert.strictEqual(statusRes.body.itemsCount, 2);
@@ -210,7 +222,7 @@ async function runTests() {
     port: TEST_PORT,
     path: '/api/sync/pull',
     method: 'GET',
-    headers: { Authorization: `Bearer ${token}` }
+    headers: { Cookie: tokenCookie }
   });
   assert.strictEqual(pullRes.status, 200);
   assert.strictEqual(pullRes.body.success, true);

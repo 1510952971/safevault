@@ -22,7 +22,44 @@ const PORT = process.env.PORT || 8088;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'vault-store.json');
 const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, '..', 'dist');
+const REQUIRE_HTTPS = process.env.REQUIRE_HTTPS === 'true';
+const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:3000').split(',').map((origin) => origin.trim()).filter(Boolean);
 let SERVER_VERSION = '1.1.0';
+
+// 认证失败限流：按 IP 与账号分别计数，避免 authHash 被暴力重放。
+const authFailures = new Map();
+const authChallenges = new Map();
+const AUTH_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_MAX_FAILURES = 8;
+function authKey(req, username = '') {
+  return `${req.socket.remoteAddress || 'unknown'}:${String(username).trim().toLowerCase()}`;
+}
+function isRateLimited(req, username) {
+  const key = authKey(req, username);
+  const entry = authFailures.get(key);
+  if (!entry) return false;
+  if (entry.resetAt <= Date.now()) { authFailures.delete(key); return false; }
+  return entry.count >= AUTH_MAX_FAILURES;
+}
+function recordAuthFailure(req, username) {
+  const key = authKey(req, username);
+  const now = Date.now();
+  const entry = authFailures.get(key);
+  if (!entry || entry.resetAt <= now) authFailures.set(key, { count: 1, resetAt: now + AUTH_WINDOW_MS });
+  else entry.count += 1;
+}
+function clearAuthFailures(req, username) { authFailures.delete(authKey(req, username)); }
+function issueAuthChallenge(req, username) {
+  const challenge = crypto.randomBytes(32).toString('hex');
+  authChallenges.set(`${authKey(req, username)}:${challenge}`, Date.now() + 60 * 1000);
+  return challenge;
+}
+function consumeAuthChallenge(req, username, challenge) {
+  const key = `${authKey(req, username)}:${challenge}`;
+  const expiresAt = authChallenges.get(key);
+  authChallenges.delete(key);
+  return Boolean(expiresAt && expiresAt > Date.now());
+}
 
 // 确保持久化数据目录存在
 if (!fs.existsSync(DATA_DIR)) {
@@ -80,7 +117,8 @@ loadDatabase();
 function createSession(username) {
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30天有效
-  db.sessions[token] = { username, expiresAt };
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  db.sessions[tokenHash] = { username, expiresAt };
   saveDatabase();
   return token;
 }
@@ -88,17 +126,23 @@ function createSession(username) {
 function verifyToken(req) {
   const authHeader = req.headers['authorization'] || '';
   let token = '';
-  if (authHeader.startsWith('Bearer ')) {
+  if (authHeader.startsWith('Bearer ') && authHeader.substring(7).trim()) {
     token = authHeader.substring(7).trim();
   } else if (req.headers['x-access-token']) {
     token = String(req.headers['x-access-token']).trim();
+  } else {
+    const cookieHeader = String(req.headers.cookie || '');
+    const match = cookieHeader.match(/(?:^|;\s*)safevault_session=([^;]+)/);
+    if (match) token = decodeURIComponent(match[1]);
   }
 
-  if (!token || !db.sessions[token]) return null;
+  if (!token) return null;
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  if (!db.sessions[tokenHash]) return null;
 
-  const session = db.sessions[token];
+  const session = db.sessions[tokenHash];
   if (session.expiresAt < Date.now()) {
-    delete db.sessions[token];
+    delete db.sessions[tokenHash];
     saveDatabase();
     return null;
   }
@@ -145,12 +189,39 @@ function parseJsonBody(req) {
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': getCorsOrigin(res.req),
+    'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Access-Token',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: http://localhost:* http://127.0.0.1:* http://192.168.* http://10.* http://172.16.* http://172.17.* http://172.18.* http://172.19.* http://172.2* http://172.30.* http://172.31.*",
     'Cache-Control': 'no-store'
   });
   res.end(JSON.stringify(data));
+}
+
+function parseCookies(req) {
+  const cookies = {};
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const separator = part.indexOf('=');
+    if (separator < 0) continue;
+    const key = part.slice(0, separator).trim();
+    const value = part.slice(separator + 1).trim();
+    if (key) cookies[key] = decodeURIComponent(value);
+  }
+  return cookies;
+}
+
+function getCorsOrigin(req) {
+  const origin = String(req.headers.origin || '');
+  return CORS_ORIGINS.includes(origin) ? origin : CORS_ORIGINS[0];
+}
+
+function sessionCookie(token, req) {
+  const secure = REQUIRE_HTTPS || req.headers['x-forwarded-proto'] === 'https';
+  return `safevault_session=${encodeURIComponent(token)}; Max-Age=2592000; Path=/; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
 }
 
 // 处理静态文件
@@ -194,13 +265,17 @@ function serveStaticFile(req, res, pathname) {
 
 // 创建 HTTP 服务器
 const server = http.createServer(async (req, res) => {
+  if (REQUIRE_HTTPS && req.headers['x-forwarded-proto'] !== 'https') {
+    return sendJson(res, 426, { success: false, message: '此同步服务要求通过 HTTPS 反向代理访问' });
+  }
   const reqUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const pathname = reqUrl.pathname;
 
   // 全局 CORS 预检
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': getCorsOrigin(req),
+      'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Access-Token',
       'Access-Control-Max-Age': '86400'
@@ -251,10 +326,10 @@ const server = http.createServer(async (req, res) => {
         saveDatabase();
 
         const token = createSession(cleanUser);
+        res.setHeader('Set-Cookie', sessionCookie(token, req));
         return sendJson(res, 200, {
           success: true,
           message: '极空间账号注册成功',
-          token,
           username: cleanUser,
           salt
         });
@@ -275,25 +350,58 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
+      if (pathname === '/api/auth/challenge' && req.method === 'GET') {
+        const username = String(reqUrl.searchParams.get('username') || '').trim().toLowerCase();
+        if (!db.users[username]) return sendJson(res, 404, { success: false, message: '未找到该账号，请先注册' });
+        return sendJson(res, 200, { success: true, challenge: issueAuthChallenge(req, username) });
+      }
+
       // 4. 账号登录
       if (pathname === '/api/auth/login' && req.method === 'POST') {
-        const { username, authHash } = await parseJsonBody(req);
+        const { username, authHash, challenge, challengeResponse } = await parseJsonBody(req);
         const cleanUser = String(username).trim().toLowerCase();
+        if (isRateLimited(req, cleanUser)) {
+          return sendJson(res, 429, { success: false, message: '登录失败次数过多，请 15 分钟后重试' });
+        }
         const user = db.users[cleanUser];
-        if (!user || user.authHash !== authHash) {
+        let valid = false;
+        if (user && challenge && challengeResponse && consumeAuthChallenge(req, cleanUser, challenge)) {
+          const expected = crypto.createHmac('sha256', user.authHash).update(challenge).digest('hex');
+          const supplied = Buffer.from(String(challengeResponse));
+          valid = supplied.length === expected.length
+            && crypto.timingSafeEqual(Buffer.from(expected), supplied);
+        }
+        if (!valid) {
+          recordAuthFailure(req, cleanUser);
           return sendJson(res, 401, { success: false, message: '账号或密码认证摘要错误' });
         }
 
+        clearAuthFailures(req, cleanUser);
+
         const token = createSession(cleanUser);
+        res.setHeader('Set-Cookie', sessionCookie(token, req));
         return sendJson(res, 200, {
           success: true,
           message: '登录极空间成功',
-          token,
           username: cleanUser,
           salt: user.salt,
           version: user.version,
           updatedAt: user.updatedAt
         });
+      }
+
+      if (pathname === '/api/auth/logout' && req.method === 'POST') {
+        const authHeader = req.headers['authorization'] || '';
+        const cookies = parseCookies(req);
+        const token = cookies.safevault_session
+          || (authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : '');
+        if (token) {
+          const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+          delete db.sessions[tokenHash];
+          saveDatabase();
+        }
+        res.setHeader('Set-Cookie', 'safevault_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict');
+        return sendJson(res, 200, { success: true, message: '会话已注销' });
       }
 
       // 需要登录鉴权的路由

@@ -19,11 +19,13 @@ export interface VaultMeta {
   salt: string;                // Base64 编码的 16 字节随机盐值 (用于 PBKDF2)
   testCipher: string;          // 验证主密码正确性的特征密文 (AES-GCM 加密已知常量 "SAFEVAULT_TOKEN")
   testIv: string;              // 验证密文的 12 字节随机 IV (Base64)
+  kdfIterations?: number;      // 主密码 PBKDF2 轮数，旧数据缺省为 100000
   lockTimeoutMinutes: number;  // 自动锁屏时长 (默认 3 分钟)
   hasSecondaryPassword?: boolean;    // 是否开启二级安全密码
   secondarySalt?: string;            // 二级密码 PBKDF2 独立盐值 (Base64)
   secondaryTestCipher?: string;      // 二级密码校验密文 (Base64)
   secondaryTestIv?: string;          // 二级密码校验 IV (Base64)
+  secondaryKdfIterations?: number;   // 二级密码 PBKDF2 轮数
   createdAt: string;           // ISO 8601 时间戳
   updatedAt: string;           // 最后修改时间戳
 }
@@ -50,6 +52,7 @@ export interface EncryptedPayload {
 }
 
 export interface EncryptedVaultItem {
+  encryptionVersion?: 2;      // 新条目强制使用 AAD；缺省值仅代表历史格式
   id: string;                  // UUID
   title: string;               // 平台/应用名称 (明文索引)
   category: CategoryType;      // 分类
@@ -83,6 +86,8 @@ export interface DecryptedVaultItem {
   updatedAt: string;
 }
 
+export type VaultItem = DecryptedVaultItem;
+
 export interface VaultSecurityAudit {
   totalItems: number;
   favoriteCount: number;
@@ -100,6 +105,17 @@ export interface VaultBackupFile {
   exportedAt: string;
   meta: VaultMeta;
   items: EncryptedVaultItem[];
+}
+
+export interface EncryptedVaultBackupFile {
+  app: 'SafeVault';
+  backupVersion: '2.0';
+  kdf: 'PBKDF2-SHA256';
+  iterations: number;
+  salt: string;
+  iv: string;
+  ciphertext: string;
+  exportedAt: string;
 }
 
 export interface PasswordGeneratorOptions {
