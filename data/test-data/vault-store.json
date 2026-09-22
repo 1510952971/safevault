@@ -1,0 +1,20 @@
+{
+  "users": {
+    "zspace_tester": {
+      "username": "zspace_tester",
+      "authHash": "445f556518b11fac30ae187e83be87e574d2b4d94415711f87b8a4440320514b",
+      "salt": "11223344556677889900aabbccddeeff",
+      "createdAt": "2026-09-22T16:46:44.948Z",
+      "updatedAt": "2026-09-22T16:46:44.948Z",
+      "vaultMeta": null,
+      "encryptedItems": [],
+      "version": 1
+    }
+  },
+  "sessions": {
+    "48c1978a307e1c99c382e6f7dd8fbce7ef34e81a2339990171523eefdf4a1051": {
+      "username": "zspace_tester",
+      "expiresAt": 1792687604950
+    }
+  }
+}
