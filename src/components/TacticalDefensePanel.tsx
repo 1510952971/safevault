@@ -47,7 +47,7 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
   };
 
   return (
-    <aside className="w-full lg:w-80 shrink-0 bg-white border-t lg:border-t-0 lg:border-l border-slate-200 lg:h-full flex flex-col justify-between overflow-y-auto p-5 select-none z-10 scrollbar-thin shadow-sm lg:shadow-none">
+    <aside className="w-full lg:w-72 xl:w-80 shrink-0 bg-white border-t lg:border-t-0 lg:border-l border-slate-200 lg:h-full flex flex-col justify-between overflow-y-auto p-4 xl:p-5 select-none z-10 scrollbar-none shadow-sm lg:shadow-none">
       <div className="space-y-4">
         {/* 面板标题 */}
         <div className="border-l-4 border-brand-lime pl-2.5 pb-1 flex items-center justify-between">

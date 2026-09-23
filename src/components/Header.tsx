@@ -79,12 +79,12 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="shrink-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 h-14 flex items-center justify-between transition-all shadow-xs w-full select-none">
+    <header className="shrink-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-3 sm:px-4 lg:px-5 py-2 min-h-14 h-auto flex flex-wrap items-center gap-2 transition-all shadow-xs w-full min-w-0 overflow-visible select-none">
       
-      {/* 左侧系统标识与版本 (绝对单行，绝不折行) */}
-      <div className="flex items-center gap-2.5 shrink-0 whitespace-nowrap">
+      {/* 左侧系统标识与版本 */}
+      <div className="flex items-center gap-2.5 min-w-0 shrink whitespace-nowrap">
         <SafeVaultLogo size={32} className="shrink-0 drop-shadow-xs" />
-        <div className="flex items-center gap-2 whitespace-nowrap">
+        <div className="flex items-center gap-2 min-w-0 whitespace-nowrap">
           <h1 className="font-extrabold text-sm sm:text-base tracking-tight text-slate-900 flex items-center gap-1.5 whitespace-nowrap">
             <span>密码数据库</span>
             <span className="text-xs font-mono font-semibold text-slate-400 hidden sm:inline">// SAFEVAULT</span>
@@ -106,8 +106,8 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* 右侧战术操作区 (紧凑单行排版，永不换行) */}
-      <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+      {/* 右侧战术操作区：空间不足时换行，保持文字说明和下拉菜单完整可见 */}
+      <div className="ml-auto flex-1 min-w-0 flex flex-wrap items-center justify-end gap-1.5 whitespace-nowrap overflow-visible">
         {!isLocked && (
           <>
             {/* 终端编号与体量 (超大宽屏展示) */}
@@ -189,7 +189,7 @@ export const Header: React.FC<HeaderProps> = ({
               title="强密码发生器"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-              <span className="hidden sm:inline">密码发生器</span>
+              <span>密码发生器</span>
             </button>
 
             {/* 备份与恢复 */}
@@ -199,7 +199,7 @@ export const Header: React.FC<HeaderProps> = ({
               title="备份与恢复"
             >
               <DownloadCloud className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-              <span className="hidden sm:inline">密文备份</span>
+              <span>密文备份</span>
             </button>
 
             {/* 更多功能下拉菜单 (优雅收纳 修改主密码、应急救援单、GitHub更新) */}
@@ -286,7 +286,7 @@ export const Header: React.FC<HeaderProps> = ({
                   title="退出当前账号 (返回登录界面，可切换其他账号)"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">退出</span>
+                  <span>退出</span>
                 </button>
               )}
             </div>

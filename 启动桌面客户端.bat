@@ -7,10 +7,10 @@ echo         SafeVault 密码数据库 - 原生桌面客户端
 echo ========================================================
 echo.
 
-if not exist "%~dp0dist\index.html" (
-    echo [提示] 首次启动正在构建客户端页面...
-    call npm.cmd run build
-)
-
-echo 正在启动 SafeVault 桌面端独立窗口...
+echo [提示] 正在更新桌面端页面资源并启动应用...
 call npm.cmd run desktop
+if errorlevel 1 (
+    echo [错误] 桌面端页面构建或启动失败。
+    pause
+    exit /b 1
+)

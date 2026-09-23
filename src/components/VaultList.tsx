@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, ShieldAlert, KeyRound, Shield, Star, ExternalLink, ArrowUpDown, Trash2, RotateCcw } from 'lucide-react';
+import { Plus, ShieldAlert, KeyRound, Shield, Star, ExternalLink, ArrowUpDown, Trash2, RotateCcw, Menu, X, ChevronLeft, ChevronRight, Pin, PinOff } from 'lucide-react';
 import { DecryptedVaultItem, SortOption } from '../types/vault';
 import { Sidebar } from './Sidebar';
 import { VaultOverview } from './VaultOverview';
@@ -71,6 +71,31 @@ export const VaultList: React.FC<VaultListProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [sortBy, setSortBy] = useState<SortOption>('favorites_first');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem('safevault_sidebar_collapsed_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isSidebarPinned, setIsSidebarPinned] = useState(() => {
+    try {
+      return window.localStorage.getItem('safevault_sidebar_pinned_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isDefenseOpen, setIsDefenseOpen] = useState(false);
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem('safevault_sidebar_collapsed_v1', String(isSidebarCollapsed));
+      window.localStorage.setItem('safevault_sidebar_pinned_v1', String(isSidebarPinned));
+    } catch {
+      // 私有浏览模式或存储被禁用时不影响界面使用。
+    }
+  }, [isSidebarCollapsed, isSidebarPinned]);
 
   const isTrashMode = selectedCategory === 'trash';
   const activeItems = useMemo(() => items.filter((i) => !i.isDeleted), [items]);
@@ -142,20 +167,141 @@ export const VaultList: React.FC<VaultListProps> = ({
   }, [activeItems]);
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row h-full overflow-hidden w-full relative">
+    <div className={`flex-1 flex h-full min-w-0 overflow-hidden w-full relative ${isSidebarPinned ? 'flex-row' : 'flex-col 2xl:flex-row'}`}>
       {/* 1. 左侧顶天立地分类导航停靠栏 */}
-      <Sidebar
-        selectedCategory={selectedCategory}
-        onSelectCategory={setSelectedCategory}
-        favoritesCount={audit.favoriteCount}
-        riskyCount={audit.riskyItemIds.length}
-        trashCount={trashItems.length}
-        totalCount={activeItems.length}
-        categoryCounts={categoryCounts}
-      />
+      <div className={`${isSidebarPinned ? 'flex' : 'hidden 2xl:flex'} shrink-0`}>
+        {isSidebarCollapsed ? (
+          <div className="w-10 h-full bg-white border-r border-slate-200 flex flex-col items-center pt-4 gap-3">
+            <button
+              type="button"
+              aria-label="展开分类侧栏"
+              title="展开分类侧栏"
+              className="text-slate-500 hover:text-slate-900 hover:bg-slate-50 p-1"
+              onClick={() => setIsSidebarCollapsed(false)}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              aria-label={isSidebarPinned ? '取消侧栏常驻' : '侧栏常驻'}
+              title={isSidebarPinned ? '取消侧栏常驻' : '侧栏常驻'}
+              className="text-slate-400 hover:text-slate-900 p-1"
+              onClick={() => setIsSidebarPinned((value) => !value)}
+            >
+              {isSidebarPinned ? <Pin className="w-3.5 h-3.5" /> : <PinOff className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        ) : (
+          <div className="relative h-full">
+            <Sidebar
+              selectedCategory={selectedCategory}
+              onSelectCategory={setSelectedCategory}
+              favoritesCount={audit.favoriteCount}
+              riskyCount={audit.riskyItemIds.length}
+              trashCount={trashItems.length}
+              totalCount={activeItems.length}
+              categoryCounts={categoryCounts}
+            />
+            <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5">
+              <button
+                type="button"
+                aria-label={isSidebarPinned ? '取消侧栏常驻' : '侧栏常驻'}
+                title={isSidebarPinned ? '取消侧栏常驻' : '侧栏常驻'}
+                className="p-1 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-200/80"
+                onClick={() => setIsSidebarPinned((value) => !value)}
+              >
+                {isSidebarPinned ? <Pin className="w-3.5 h-3.5" /> : <PinOff className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                type="button"
+                aria-label="收起分类侧栏"
+                title="收起分类侧栏"
+                className="p-1 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-200/80"
+                onClick={() => setIsSidebarCollapsed(true)}
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 窄窗口下按需打开分类侧栏，避免主内容被固定侧栏挤出屏幕 */}
+      {isSidebarOpen && (
+        <div className="fixed inset-0 z-50 2xl:hidden flex">
+          <button
+            type="button"
+            aria-label="关闭分类侧栏"
+            className="absolute inset-0 bg-slate-950/40"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+          <div className="relative h-full w-72 max-w-[85vw] bg-white shadow-2xl">
+            <div className="h-12 px-4 border-b border-slate-200 flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700">分类索引</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  aria-label="侧栏常驻"
+                  title="侧栏常驻"
+                  className="p-1.5 text-slate-500 hover:text-slate-900"
+                  onClick={() => {
+                    setIsSidebarPinned(true);
+                    setIsSidebarOpen(false);
+                  }}
+                >
+                  <Pin className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="关闭分类侧栏"
+                  className="p-1.5 text-slate-500 hover:text-slate-900"
+                  onClick={() => setIsSidebarOpen(false)}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="h-[calc(100%-3rem)] overflow-y-auto">
+              <Sidebar
+                selectedCategory={selectedCategory}
+                onSelectCategory={(category) => {
+                  setSelectedCategory(category);
+                  setIsSidebarOpen(false);
+                }}
+                favoritesCount={audit.favoriteCount}
+                riskyCount={audit.riskyItemIds.length}
+                trashCount={trashItems.length}
+                totalCount={activeItems.length}
+                categoryCounts={categoryCounts}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2. 中部核心主监控看板与凭据列表 (独立容器平滑滚动) */}
-      <section className="flex-1 h-full overflow-y-auto min-w-0 bg-[#F5F6F8] p-4 sm:p-6 space-y-5 scrollbar-thin">
+      <section className="flex-1 h-full overflow-y-auto min-w-0 bg-[#F5F6F8] p-4 sm:p-6 space-y-5 scrollbar-none">
+        {/* 窄窗口下收起两侧面板，主内容保持完整宽度 */}
+        <div className="2xl:hidden flex items-center justify-between gap-2 -mb-1">
+          {!isSidebarPinned && (
+            <button
+              type="button"
+              className="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 flex items-center gap-1.5 shadow-sm"
+              onClick={() => setIsSidebarOpen(true)}
+            >
+              <Menu className="w-3.5 h-3.5" />
+              分类
+            </button>
+          )}
+          <button
+            type="button"
+            className="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 flex items-center gap-1.5 shadow-sm"
+            onClick={() => setIsDefenseOpen(true)}
+          >
+            <Shield className="w-3.5 h-3.5 text-emerald-600" />
+            安全审计
+          </button>
+        </div>
         {/* 废纸篓模式横幅 或 正常模式保险库总览 HUD */}
         {isTrashMode ? (
           <div className="bg-rose-50 border border-rose-200 rounded-lg p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-tactical-sm">
@@ -314,7 +460,7 @@ export const VaultList: React.FC<VaultListProps> = ({
 
           {/* 骨架屏加载状态 */}
           {isLoading && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="bg-white border border-slate-200 rounded-lg p-4 animate-pulse space-y-3">
                   <div className="h-4 bg-slate-200 rounded w-1/3" />
@@ -326,7 +472,7 @@ export const VaultList: React.FC<VaultListProps> = ({
 
           {/* 槽位卡片网格 + 空槽位卡片 */}
           {!isLoading && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {/* 已录入凭据卡片 */}
               {filteredItems.map((item, idx) => {
                 const numStr = (idx + 1).toString().padStart(2, '0');
@@ -386,24 +532,74 @@ export const VaultList: React.FC<VaultListProps> = ({
       </section>
 
       {/* 3. 右侧安全审计与防御面板 */}
-      <TacticalDefensePanel
-        weakCount={audit.weakCount}
-        reusedCount={audit.reusedCount}
-        remainingLockSeconds={remainingLockSeconds}
-        lockTimeoutMinutes={lockTimeoutMinutes}
-        hasSecondaryPassword={hasSecondaryPassword}
-        isSecondaryAuthorized={isSecondaryAuthorized}
-        onOpenSecondaryPasswordModal={onOpenSecondaryPasswordModal}
-        onChangeLockTimeout={onChangeLockTimeout}
-        onOpenGenerator={onOpenGenerator}
-        onOpenBackup={onOpenBackup}
-        onFilterRisky={() => setSelectedCategory('risky')}
-        onOpenChangeMasterPassword={onOpenChangeMasterPassword}
-        onOpenEmergencyKit={onOpenEmergencyKit}
-        isNasConnected={isNasConnected}
-        onOpenSyncModal={onOpenSyncModal}
-        onOpenUpdateModal={onOpenUpdateModal}
-      />
+      <div className="hidden 2xl:flex shrink-0">
+        <TacticalDefensePanel
+          weakCount={audit.weakCount}
+          reusedCount={audit.reusedCount}
+          remainingLockSeconds={remainingLockSeconds}
+          lockTimeoutMinutes={lockTimeoutMinutes}
+          hasSecondaryPassword={hasSecondaryPassword}
+          isSecondaryAuthorized={isSecondaryAuthorized}
+          onOpenSecondaryPasswordModal={onOpenSecondaryPasswordModal}
+          onChangeLockTimeout={onChangeLockTimeout}
+          onOpenGenerator={onOpenGenerator}
+          onOpenBackup={onOpenBackup}
+          onFilterRisky={() => setSelectedCategory('risky')}
+          onOpenChangeMasterPassword={onOpenChangeMasterPassword}
+          onOpenEmergencyKit={onOpenEmergencyKit}
+          isNasConnected={isNasConnected}
+          onOpenSyncModal={onOpenSyncModal}
+          onOpenUpdateModal={onOpenUpdateModal}
+        />
+      </div>
+
+      {/* 窄窗口下按需打开安全审计侧栏 */}
+      {isDefenseOpen && (
+        <div className="fixed inset-0 z-50 2xl:hidden flex justify-end">
+          <button
+            type="button"
+            aria-label="关闭安全审计侧栏"
+            className="absolute inset-0 bg-slate-950/40"
+            onClick={() => setIsDefenseOpen(false)}
+          />
+          <div className="relative h-full w-full max-w-sm bg-white shadow-2xl">
+            <div className="h-12 px-4 border-b border-slate-200 flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700">安全审计与防御中枢</span>
+              <button
+                type="button"
+                aria-label="关闭安全审计侧栏"
+                className="p-1.5 text-slate-500 hover:text-slate-900"
+                onClick={() => setIsDefenseOpen(false)}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="h-[calc(100%-3rem)] overflow-y-auto">
+              <TacticalDefensePanel
+                weakCount={audit.weakCount}
+                reusedCount={audit.reusedCount}
+                remainingLockSeconds={remainingLockSeconds}
+                lockTimeoutMinutes={lockTimeoutMinutes}
+                hasSecondaryPassword={hasSecondaryPassword}
+                isSecondaryAuthorized={isSecondaryAuthorized}
+                onOpenSecondaryPasswordModal={onOpenSecondaryPasswordModal}
+                onChangeLockTimeout={onChangeLockTimeout}
+                onOpenGenerator={onOpenGenerator}
+                onOpenBackup={onOpenBackup}
+                onFilterRisky={() => {
+                  setSelectedCategory('risky');
+                  setIsDefenseOpen(false);
+                }}
+                onOpenChangeMasterPassword={onOpenChangeMasterPassword}
+                onOpenEmergencyKit={onOpenEmergencyKit}
+                isNasConnected={isNasConnected}
+                onOpenSyncModal={onOpenSyncModal}
+                onOpenUpdateModal={onOpenUpdateModal}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "server": "node server/index.js",
     "test": "node tests/test-crypto.js && node tests/test-audit-totp.js && node tests/test-secondary-auth.js && node tests/test-advanced-features.js && node tests/test-sync-protocol.js",
-    "desktop": "electron electron/main.cjs",
+    "desktop": "npm run build && electron electron/main.cjs",
     "docs:build": "python docs/generate_design_doc.py"
   },
   "dependencies": {

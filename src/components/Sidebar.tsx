@@ -44,7 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   categoryCounts = {}
 }) => {
   return (
-    <aside className="w-full lg:w-60 shrink-0 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 lg:h-full flex flex-col justify-between overflow-hidden select-none z-10 shadow-sm lg:shadow-none">
+    <aside className="w-full lg:w-52 xl:w-60 shrink-0 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 lg:h-full flex flex-col justify-between overflow-hidden select-none z-10 shadow-sm lg:shadow-none">
       {/* 顶部标题区 (桌面端专属标题) */}
       <div className="hidden lg:flex px-4 py-3 bg-slate-50/80 border-b border-slate-200 items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
@@ -55,7 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* 竖向战术菜单项 */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
+      <div className="flex-1 overflow-y-auto scrollbar-none">
         <nav className="divide-y divide-slate-100 flex flex-row lg:flex-col overflow-x-auto lg:overflow-x-visible">
           {/* 全部凭据 */}
           <button
