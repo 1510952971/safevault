@@ -109,7 +109,7 @@ async function runTests() {
   const verRes = await makeRequest({ host: '127.0.0.1', port: TEST_PORT, path: '/api/version', method: 'GET' });
   assert.strictEqual(verRes.status, 200);
   assert.strictEqual(verRes.body.success, true);
-  assert.strictEqual(verRes.body.version, '1.2.1');
+  assert.strictEqual(verRes.body.version, '1.2.2');
 
   // 注册
   const testUser = 'zspace_tester';
@@ -157,6 +157,33 @@ async function runTests() {
     { username: testUser, challenge: challengeRes.body.challenge, challengeResponse }
   );
   assert.strictEqual(replayLogin.status, 401, '已使用的登录挑战不得重放');
+
+  // 已登录会话可安全更新认证摘要；更新后新密码可以登录，旧密码不能登录。
+  const newTestPass = 'SuperVaultPass#1000';
+  const newTestAuthHash = deriveAuthHashNode(testUser, newTestPass, testSalt);
+  const updateHashRes = await makeRequest(
+    {
+      host: '127.0.0.1',
+      port: TEST_PORT,
+      path: '/api/auth/update-hash',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: tokenCookie }
+    },
+    { authHash: newTestAuthHash }
+  );
+  assert.strictEqual(updateHashRes.status, 200, '已登录会话更新认证摘要应成功');
+  assert.strictEqual(updateHashRes.body.success, true);
+
+  const newChallengeRes = await makeRequest({ host: '127.0.0.1', port: TEST_PORT, path: `/api/auth/challenge?username=${testUser}`, method: 'GET' });
+  const newLoginRes = await makeRequest(
+    { host: '127.0.0.1', port: TEST_PORT, path: '/api/auth/login', method: 'POST', headers: { 'Content-Type': 'application/json' } },
+    {
+      username: testUser,
+      challenge: newChallengeRes.body.challenge,
+      challengeResponse: crypto.createHmac('sha256', newTestAuthHash).update(newChallengeRes.body.challenge).digest('hex')
+    }
+  );
+  assert.strictEqual(newLoginRes.status, 200, '更新后的认证摘要应允许新密码登录');
 
   // 错误密码摘要登录应阻断
   const failChallenge = await makeRequest({ host: '127.0.0.1', port: TEST_PORT, path: `/api/auth/challenge?username=${testUser}`, method: 'GET' });

@@ -406,6 +406,40 @@ export async function logoutNasAccount(serverUrl: string, token = ''): Promise<v
 }
 
 /**
+ * 在已有登录会话内更新同步账号认证摘要。
+ * 服务端只保存新的 AuthHash，主密码本身不会离开客户端。
+ */
+export async function updateNasAuthHash(
+  serverUrl: string,
+  token: string,
+  username: string,
+  masterPassword: string,
+  salt: string
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const cleanUrl = normalizeServerUrl(serverUrl);
+    const cleanUser = username.trim().toLowerCase();
+    const authHash = await deriveAuthHash(cleanUser, masterPassword, salt);
+    const res = await fetch(`${cleanUrl}/api/auth/update-hash`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ authHash })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      return { success: false, message: data.message || '同步账号认证摘要更新失败' };
+    }
+    return { success: true, message: data.message || '同步账号认证摘要已更新' };
+  } catch (err: unknown) {
+    return { success: false, message: err instanceof Error ? err.message : '更新同步账号认证摘要时网络异常' };
+  }
+}
+
+/**
  * 查询同步状态与云端版本
  */
 export async function getNasSyncStatus(

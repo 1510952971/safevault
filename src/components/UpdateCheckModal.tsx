@@ -217,8 +217,8 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
                         publishedAt: new Date().toISOString(),
                         htmlUrl: 'https://github.com/goupfu/safevault/releases',
                         assets: [
-                          { name: 'SafeVault-Setup-v1.2.1.exe', downloadUrl: 'https://github.com/goupfu/safevault/releases', size: 68421000 },
-                          { name: 'SafeVault-Mobile-v1.2.1.apk', downloadUrl: 'https://github.com/goupfu/safevault/releases', size: 12450000 }
+                          { name: 'SafeVault-Setup-v1.2.2.exe', downloadUrl: 'https://github.com/goupfu/safevault/releases', size: 68421000 },
+                          { name: 'SafeVault-Mobile-v1.2.2.apk', downloadUrl: 'https://github.com/goupfu/safevault/releases', size: 12450000 }
                         ]
                       });
                     }}

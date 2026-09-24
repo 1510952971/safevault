@@ -25,7 +25,7 @@ const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, '..', 'dist');
 const REQUIRE_HTTPS = process.env.REQUIRE_HTTPS === 'true';
 const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:3000,null,file://').split(',').map((origin) => origin.trim()).filter(Boolean);
-let SERVER_VERSION = '1.2.1';
+let SERVER_VERSION = '1.2.2';
 const MAX_SNAPSHOTS = 30;
 
 // 认证失败限流：按 IP 与账号分别计数，避免 authHash 被暴力重放。
@@ -521,6 +521,26 @@ const server = http.createServer(async (req, res) => {
       }
       const currentUser = db.users[authUsername];
 
+      // 已登录会话更新同步账号认证摘要。服务端永远不会接收明文主密码。
+      if (pathname === '/api/auth/update-hash' && req.method === 'POST') {
+        const { authHash } = await parseJsonBody(req);
+        const cleanAuthHash = String(authHash || '').trim().toLowerCase();
+        if (!/^[0-9a-f]{64}$/.test(cleanAuthHash)) {
+          return sendJson(res, 400, { success: false, message: '认证摘要格式无效' });
+        }
+
+        currentUser.authHash = cleanAuthHash;
+        currentUser.updatedAt = new Date().toISOString();
+        saveDatabase();
+        return sendJson(res, 200, {
+          success: true,
+          message: '同步账号认证摘要已更新',
+          username: authUsername,
+          salt: currentUser.salt,
+          updatedAt: currentUser.updatedAt
+        });
+      }
+
       // 5. 查询同步状态
       if (pathname === '/api/sync/status' && req.method === 'GET') {
         return sendJson(res, 200, {
@@ -652,7 +672,7 @@ const server = http.createServer(async (req, res) => {
       // 10. 极空间在线系统热更新 (In-App Hot Update)
       if (pathname === '/api/system/update' && req.method === 'POST') {
         const body = await parseJsonBody(req);
-        const targetVersion = body.version || 'v1.2.1';
+        const targetVersion = body.version || 'v1.2.2';
         console.log(`[SafeVault Update] 正在执行系统在线热更新至 ${targetVersion}...`);
 
         SERVER_VERSION = targetVersion.replace(/^v/i, '');

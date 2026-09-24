@@ -39,6 +39,7 @@ import {
   normalizeServerUrl,
   getDeviceIdentifier,
   logoutNasAccount,
+  updateNasAuthHash,
   getNasSyncStatus,
   mergeVaultItems,
   NasSyncConfig
@@ -470,12 +471,12 @@ export const App: React.FC = () => {
   }, []);
 
   // 3.4 密码项任何增删改时，后台自动静默推送至极空间云端 (实时防丢)
-  const autoPushToNas = useCallback(async (meta: VaultMeta, currentItems: DecryptedVaultItem[], key: CryptoKey) => {
+  const autoPushToNas = useCallback(async (meta: VaultMeta, currentItems: DecryptedVaultItem[], key: CryptoKey): Promise<boolean> => {
     const cfg = loadNasSyncConfig();
-    if (!cfg?.token) return;
+    if (!cfg?.token) return false;
     try {
       const status = await getNasSyncStatus(cfg.serverUrl, cfg.token);
-      if (!status.success || typeof status.version !== 'number') return;
+      if (!status.success || typeof status.version !== 'number') return false;
       const encrypted = [];
       for (const it of currentItems) {
         encrypted.push(await encryptVaultItem(key, it, it.id));
@@ -489,9 +490,12 @@ export const App: React.FC = () => {
         };
         saveNasSyncConfig(updatedCfg);
         setNasConfig(updatedCfg);
+        return true;
       }
+      return false;
     } catch (e) {
       console.warn('[AutoSync] 自动静默同步至极空间后台异常:', e);
+      return false;
     }
   }, []);
 
@@ -598,7 +602,29 @@ export const App: React.FC = () => {
       saveStoredEncryptedItems(newEncryptedItems);
       setVaultMeta(newMeta);
       setMasterKey(newMasterKey);
-      await autoPushToNas(newMeta, items, newMasterKey);
+
+      // 先把使用新密钥重加密后的密文推送成功，再更新 NAS 账号认证摘要。
+      // 这样登录凭据和云端密文始终成对切换，避免只改了一半导致多端无法登录。
+      const activeConfig = loadNasSyncConfig();
+      const pushed = await autoPushToNas(newMeta, items, newMasterKey);
+      if (activeConfig?.token) {
+        if (!pushed) {
+          throw new Error('本地主密码已修改，但云端密文推送失败；同步账号认证摘要未更新，请保持当前会话并重试同步。');
+        }
+        if (!activeConfig.salt) {
+          throw new Error('缺少同步账号盐值，无法安全更新认证摘要。');
+        }
+        const authUpdate = await updateNasAuthHash(
+          activeConfig.serverUrl,
+          activeConfig.token,
+          activeConfig.username,
+          newPass,
+          activeConfig.salt
+        );
+        if (!authUpdate.success) {
+          throw new Error(authUpdate.message || '同步账号认证摘要更新失败');
+        }
+      }
 
       addToast('success', '金库主密码已成功修改！全库凭据已全部使用新密钥重加密完成。');
       return true;
