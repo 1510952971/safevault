@@ -7,7 +7,7 @@
  * 3. 提取更新日志、发版时间、以及 Windows 桌面端、安卓端与源码包下载链接。
  */
 
-export const CURRENT_APP_VERSION = 'v1.1.0';
+export const CURRENT_APP_VERSION = 'v1.2.1';
 export const DEFAULT_GITHUB_REPO = 'goupfu/safevault';
 
 export interface ReleaseAsset {
@@ -167,4 +167,3 @@ export async function performSystemUpdate(
     newVersion: targetVersion
   };
 }
-

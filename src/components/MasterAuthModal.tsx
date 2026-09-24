@@ -20,7 +20,8 @@ import {
 } from 'lucide-react';
 import { calculatePasswordStrength } from '../utils/crypto';
 import { SafeVaultLogo } from './SafeVaultLogo';
-import { normalizeServerUrl } from '../utils/sync';
+import { checkNasHealth, normalizeServerUrl } from '../utils/sync';
+import { CURRENT_APP_VERSION } from '../utils/updateChecker';
 
 export interface MasterAuthModalProps {
   isInitialized: boolean;
@@ -90,6 +91,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [nasVersion, setNasVersion] = useState<string | null>(null);
 
   // 高级连接设置（可折叠）
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -109,6 +111,23 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
   });
 
   const strength = calculatePasswordStrength(password);
+
+  // 显示当前页面实际连接到的 NAS 服务版本，便于确认 Docker 是否真的完成更新。
+  useEffect(() => {
+    let active = true;
+    if (typeof window === 'undefined' || !window.location.protocol.startsWith('http')) {
+      setNasVersion(null);
+      return () => { active = false; };
+    }
+
+    setNasVersion('检测中');
+    checkNasHealth(window.location.origin).then((health) => {
+      if (!active) return;
+      setNasVersion(health.success && health.version ? `v${health.version.replace(/^v/i, '')}` : '未连接');
+    });
+
+    return () => { active = false; };
+  }, []);
 
   // 冷却实时每秒倒计时
   useEffect(() => {
@@ -296,6 +315,14 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
           </div>
           <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-bold">
             {currentAccount ? 'STATUS: LOCKED' : 'ACCOUNT AUTH'}
+          </span>
+        </div>
+
+        {/* 版本标识：客户端版本 + 当前远程页面实际连接的 NAS 服务版本 */}
+        <div className="-mt-3 mb-4 flex items-center justify-between gap-2 text-[10px] font-mono text-slate-400">
+          <span>CLIENT {CURRENT_APP_VERSION}</span>
+          <span className={nasVersion === '未连接' ? 'text-rose-500' : nasVersion === '检测中' ? 'text-amber-500' : 'text-emerald-600'}>
+            NAS SERVER {nasVersion || '桌面端待检测'}
           </span>
         </div>
 
