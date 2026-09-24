@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Shield,
   Lock,
@@ -95,6 +95,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
 
   // 高级连接设置（可折叠）
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const usernameInputRef = useRef<HTMLInputElement>(null);
   const [customServerUrl, setCustomServerUrl] = useState(() => {
     if (typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
       return window.location.origin;
@@ -111,6 +112,22 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
   });
 
   const strength = calculatePasswordStrength(password);
+
+  // 切换登录/注册后强制恢复可输入状态，避免桌面端保留旧表单节点或键盘焦点丢失。
+  const switchAuthTab = (nextTab: 'login' | 'register' | 'standalone') => {
+    setAuthTab(nextTab);
+    setErrorMsg('');
+    setShowAdvanced(false);
+    setPassword('');
+    setConfirmPassword('');
+    window.setTimeout(() => usernameInputRef.current?.focus(), 0);
+  };
+
+  useEffect(() => {
+    if (currentAccount) return;
+    const focusTimer = window.setTimeout(() => usernameInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(focusTimer);
+  }, [authTab, currentAccount]);
 
   // 显示当前页面实际连接到的 NAS 服务版本，便于确认 Docker 是否真的完成更新。
   useEffect(() => {
@@ -216,7 +233,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
       const msg = err instanceof Error ? err.message : '登录发生异常';
       if (msg.includes('未找到') || msg.includes('404')) {
         setErrorMsg('该账号在极空间中尚未注册，已为您自动切换至【注册】！');
-        setAuthTab('register');
+        switchAuthTab('register');
       } else {
         setErrorMsg(msg);
       }
@@ -257,7 +274,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
       const msg = err instanceof Error ? err.message : '注册发生异常';
       if (msg.includes('已在极空间') || msg.includes('409') || msg.includes('已存在')) {
         setErrorMsg('该账号已存在，已为您切换至【登录】模式！');
-        setAuthTab('login');
+        switchAuthTab('login');
       } else {
         setErrorMsg(msg);
       }
@@ -450,7 +467,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
             <div className="flex border-b border-slate-200">
               <button
                 type="button"
-                onClick={() => { setAuthTab('login'); setErrorMsg(''); }}
+                onClick={() => switchAuthTab('login')}
                 className={`flex-1 py-2 text-center text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition-colors ${
                   authTab === 'login'
                     ? 'border-slate-900 text-slate-900 bg-slate-50/50'
@@ -462,7 +479,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => { setAuthTab('register'); setErrorMsg(''); }}
+                onClick={() => switchAuthTab('register')}
                 className={`flex-1 py-2 text-center text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition-colors ${
                   authTab === 'register'
                     ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50'
@@ -476,12 +493,13 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
 
             {/* 模式 1：账号登录 */}
             {authTab === 'login' && (
-              <form onSubmit={handleLoginSubmit} className="space-y-3.5">
+              <form key="login-form" onSubmit={handleLoginSubmit} className="space-y-3.5">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     同步账号 (Username)
                   </label>
                   <input
+                    ref={usernameInputRef}
                     type="text"
                     required
                     autoFocus
@@ -574,7 +592,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
                 <div className="text-center pt-1">
                   <button
                     type="button"
-                    onClick={() => { setAuthTab('register'); setErrorMsg(''); }}
+                    onClick={() => switchAuthTab('register')}
                     className="text-xs text-emerald-600 hover:underline"
                   >
                     没有账号？立即注册专属同步账号 →
@@ -585,12 +603,13 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
 
             {/* 模式 2：注册新账号 */}
             {authTab === 'register' && (
-              <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
+              <form key="register-form" onSubmit={handleRegisterSubmit} className="space-y-3.5">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     创建账号 (Username)
                   </label>
                   <input
+                    ref={usernameInputRef}
                     type="text"
                     required
                     autoFocus
@@ -680,7 +699,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
                 <div className="text-center pt-1">
                   <button
                     type="button"
-                    onClick={() => { setAuthTab('login'); setErrorMsg(''); }}
+                    onClick={() => switchAuthTab('login')}
                     className="text-xs text-slate-500 hover:text-slate-800 hover:underline"
                   >
                     已有账号？直接登录 →
@@ -691,7 +710,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
 
             {/* 模式 3：离线单机模式 (应急备用) */}
             {authTab === 'standalone' && (
-              <form onSubmit={handleStandaloneSubmit} className="space-y-3.5">
+              <form key="standalone-form" onSubmit={handleStandaloneSubmit} className="space-y-3.5">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     设定离线单机主密码（不少于 6 位）
@@ -742,7 +761,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
               {authTab !== 'standalone' && onInitializeStandalone && (
                 <button
                   type="button"
-                  onClick={() => setAuthTab('standalone')}
+                  onClick={() => switchAuthTab('standalone')}
                   className="text-slate-400 hover:text-slate-600 transition-colors"
                 >
                   单机脱机模式
