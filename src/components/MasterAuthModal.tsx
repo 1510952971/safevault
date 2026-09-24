@@ -186,9 +186,12 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
 
     setIsVerifying(true);
     try {
-      const ok = await onLogin(username.trim().toLowerCase(), password, customServerUrl);
-      if (!ok) {
-        setErrorMsg('登录失败：账号或密码不匹配，或极空间服务尚未连通');
+      const result = await onLogin(username.trim().toLowerCase(), password, customServerUrl);
+      const success = typeof result === 'boolean' ? result : result.success;
+      if (!success) {
+        setErrorMsg(typeof result === 'boolean'
+          ? '登录失败：账号或密码不匹配，或极空间服务尚未连通'
+          : (result.message || '登录失败：账号或密码不匹配，或极空间服务尚未连通'));
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '登录发生异常';
@@ -224,9 +227,12 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
 
     setIsVerifying(true);
     try {
-      const ok = await onRegister(cleanUser, password, customServerUrl);
-      if (!ok) {
-        setErrorMsg('注册失败，请检查极空间连通性');
+      const result = await onRegister(cleanUser, password, customServerUrl);
+      const success = typeof result === 'boolean' ? result : result.success;
+      if (!success) {
+        setErrorMsg(typeof result === 'boolean'
+          ? '注册失败，请检查极空间连通性'
+          : (result.message || '注册失败，请检查极空间连通性'));
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '注册发生异常';

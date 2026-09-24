@@ -84,6 +84,20 @@ export function normalizeServerUrl(rawUrl?: string): string {
   // 公网同步禁止明文 HTTP；localhost 和 RFC1918 局域网地址保留，方便本机/NAS 内网部署。
   try {
     const parsed = new URL(url);
+    const currentOrigin = typeof window !== 'undefined' && window.location?.protocol.startsWith('http')
+      ? window.location.origin
+      : '';
+    if (currentOrigin) {
+      const current = new URL(currentOrigin);
+      const isLoopback = (host: string) => host === 'localhost' || host === '127.0.0.1' || host === '::1';
+
+      // 极空间“远程访问”会把同一个 NAS 服务映射成当前电脑上的临时
+      // 127.0.0.1:xxxxx 地址。端口每次启动都可能变化，但只要当前页面
+      // 和已保存地址都是本机代理，就必须跟随当前页面，不能继续访问旧端口。
+      if (isLoopback(parsed.hostname) && isLoopback(current.hostname)) {
+        return '';
+      }
+    }
     const host = parsed.hostname;
     const isPrivate = host === 'localhost' || host === '127.0.0.1' || host === '::1'
       || /^10\./.test(host) || /^192\.168\./.test(host)
@@ -283,13 +297,15 @@ export async function registerNasAccount(
 export async function loginNasAccount(
   serverUrl: string,
   username: string,
-  masterPassword: string
+  masterPassword: string,
+  expectedSalt?: string
 ): Promise<{
   success: boolean;
   token?: string;
   salt?: string;
   version?: number;
   updatedAt?: string;
+  code?: string;
   message?: string;
 }> {
   try {
@@ -300,6 +316,17 @@ export async function loginNasAccount(
     const saltRes = await getNasSalt(cleanUrl, cleanUser);
     if (!saltRes.success || !saltRes.salt) {
       return { success: false, message: saltRes.message || '获取账号盐值失败' };
+    }
+
+    // 同一账号在同一份 vault-store.json 中的盐值不会变化。
+    // 如果当前极空间代理返回了不同盐值，说明它指向了另一份数据目录，
+    // 此时继续输入密码只会得到“认证摘要错误”，应明确提示用户检查容器挂载。
+    if (expectedSalt && expectedSalt !== saltRes.salt) {
+      return {
+        success: false,
+        code: 'NAS_DATA_MISMATCH',
+        message: '当前极空间代理指向了另一份 SafeVault 数据库，请检查 safevault 容器的 /app/data 挂载目录。'
+      };
     }
 
     // 2. 本地计算 AuthHash

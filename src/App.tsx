@@ -257,9 +257,11 @@ export const App: React.FC = () => {
       setIsLoading(true);
       const cleanUrl = normalizeServerUrl(customServerUrl);
       const cleanUser = username.trim().toLowerCase();
+      const previousConfig = loadNasSyncConfig();
+      const expectedSalt = previousConfig?.username === cleanUser ? previousConfig.salt : undefined;
 
       // 1. 调用极空间登录 API (通过零知识 AuthHash，主密码绝不上云)
-      const loginRes = await loginNasAccount(cleanUrl, cleanUser, masterPassword);
+      const loginRes = await loginNasAccount(cleanUrl, cleanUser, masterPassword, expectedSalt);
       if (!loginRes.success || !loginRes.salt) {
         const msg = loginRes.message || '登录失败：账号或主密码不匹配';
         addToast('error', msg);
