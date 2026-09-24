@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Cpu, AlertTriangle, ShieldCheck, CopyCheck, KeyRound, Key, FileText, EyeOff, Pin, PinOff } from 'lucide-react';
+import { Clock, Cpu, AlertTriangle, ShieldCheck, CopyCheck, KeyRound, Key, FileText, EyeOff, Pin, PinOff, ChevronRight } from 'lucide-react';
 
 interface TacticalDefensePanelProps {
   weakCount: number;
@@ -15,6 +15,7 @@ interface TacticalDefensePanelProps {
   onChangeLockTimeout: (mins: number) => void;
   onTogglePrivacyShield: (enabled: boolean) => void;
   onTogglePinned: () => void;
+  onToggleCollapsed?: () => void;
   onOpenGenerator: () => void;
   onOpenBackup: () => void;
   onFilterRisky: () => void;
@@ -38,6 +39,7 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
   onChangeLockTimeout,
   onTogglePrivacyShield,
   onTogglePinned,
+  onToggleCollapsed,
   onOpenGenerator,
   onOpenBackup,
   onFilterRisky,
@@ -74,6 +76,17 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
             >
               {isPinned ? <Pin className="w-3.5 h-3.5" /> : <PinOff className="w-3.5 h-3.5" />}
             </button>
+            {onToggleCollapsed && (
+              <button
+                type="button"
+                aria-label="收起安全审计栏"
+                title="收起安全审计栏"
+                className="p-1 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+                onClick={onToggleCollapsed}
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
 

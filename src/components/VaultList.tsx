@@ -98,6 +98,13 @@ export const VaultList: React.FC<VaultListProps> = ({
       return false;
     }
   });
+  const [isDefenseCollapsed, setIsDefenseCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem('safevault_defense_collapsed_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   React.useEffect(() => {
     try {
@@ -115,6 +122,14 @@ export const VaultList: React.FC<VaultListProps> = ({
       // 私有浏览模式或存储被禁用时不影响界面使用。
     }
   }, [isDefensePinned]);
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem('safevault_defense_collapsed_v1', String(isDefenseCollapsed));
+    } catch {
+      // 私有浏览模式或存储被禁用时不影响界面使用。
+    }
+  }, [isDefenseCollapsed]);
 
   const isTrashMode = selectedCategory === 'trash';
   const activeItems = useMemo(() => items.filter((i) => !i.isDeleted), [items]);
@@ -554,28 +569,52 @@ export const VaultList: React.FC<VaultListProps> = ({
 
       {/* 3. 右侧安全审计与防御面板 */}
       <div className={`${isDefensePinned ? 'flex' : 'hidden 2xl:flex'} shrink-0 h-full`}>
-        <TacticalDefensePanel
-          weakCount={audit.weakCount}
-          reusedCount={audit.reusedCount}
-          remainingLockSeconds={remainingLockSeconds}
-          lockTimeoutMinutes={lockTimeoutMinutes}
-          hasSecondaryPassword={hasSecondaryPassword}
-          isSecondaryAuthorized={isSecondaryAuthorized}
-          isPrivacyShieldEnabled={isPrivacyShieldEnabled}
-          isPinned={isDefensePinned}
-          onOpenSecondaryPasswordModal={onOpenSecondaryPasswordModal}
-          onChangeLockTimeout={onChangeLockTimeout}
-          onTogglePrivacyShield={onTogglePrivacyShield}
-          onTogglePinned={() => setIsDefensePinned((value) => !value)}
-          onOpenGenerator={onOpenGenerator}
-          onOpenBackup={onOpenBackup}
-          onFilterRisky={() => setSelectedCategory('risky')}
-          onOpenChangeMasterPassword={onOpenChangeMasterPassword}
-          onOpenEmergencyKit={onOpenEmergencyKit}
-          isNasConnected={isNasConnected}
-          onOpenSyncModal={onOpenSyncModal}
-          onOpenUpdateModal={onOpenUpdateModal}
-        />
+        {isDefenseCollapsed ? (
+          <div className="w-10 h-full bg-white border-l border-slate-200 flex flex-col items-center pt-4 gap-3">
+            <button
+              type="button"
+              aria-label="展开安全审计栏"
+              title="展开安全审计栏"
+              className="text-slate-500 hover:text-slate-900 hover:bg-slate-50 p-1"
+              onClick={() => setIsDefenseCollapsed(false)}
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              aria-label={isDefensePinned ? '取消安全栏常驻' : '安全栏常驻'}
+              title={isDefensePinned ? '取消安全栏常驻' : '安全栏常驻'}
+              className="text-slate-400 hover:text-slate-900 p-1"
+              onClick={() => setIsDefensePinned((value) => !value)}
+            >
+              {isDefensePinned ? <Pin className="w-3.5 h-3.5" /> : <PinOff className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        ) : (
+          <TacticalDefensePanel
+            weakCount={audit.weakCount}
+            reusedCount={audit.reusedCount}
+            remainingLockSeconds={remainingLockSeconds}
+            lockTimeoutMinutes={lockTimeoutMinutes}
+            hasSecondaryPassword={hasSecondaryPassword}
+            isSecondaryAuthorized={isSecondaryAuthorized}
+            isPrivacyShieldEnabled={isPrivacyShieldEnabled}
+            isPinned={isDefensePinned}
+            onOpenSecondaryPasswordModal={onOpenSecondaryPasswordModal}
+            onChangeLockTimeout={onChangeLockTimeout}
+            onTogglePrivacyShield={onTogglePrivacyShield}
+            onTogglePinned={() => setIsDefensePinned((value) => !value)}
+            onToggleCollapsed={() => setIsDefenseCollapsed(true)}
+            onOpenGenerator={onOpenGenerator}
+            onOpenBackup={onOpenBackup}
+            onFilterRisky={() => setSelectedCategory('risky')}
+            onOpenChangeMasterPassword={onOpenChangeMasterPassword}
+            onOpenEmergencyKit={onOpenEmergencyKit}
+            isNasConnected={isNasConnected}
+            onOpenSyncModal={onOpenSyncModal}
+            onOpenUpdateModal={onOpenUpdateModal}
+          />
+        )}
       </div>
 
       {/* 窄窗口下按需打开安全审计侧栏 */}
