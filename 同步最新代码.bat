@@ -40,6 +40,13 @@ if defined HAS_CHANGES (
     exit /b 1
 )
 
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$root = [IO.Path]::GetFullPath('%~dp0').TrimEnd('\'); $running = Get-CimInstance Win32_Process | Where-Object { $_.Name -in @('electron.exe','node.exe') -and $_.CommandLine -and $_.CommandLine -like ('*' + $root + '*') -and $_.CommandLine -match 'electron' }; if ($running) { exit 1 }"
+if errorlevel 1 (
+    echo [错误] SafeVault 当前仍在运行。请关闭桌面客户端，或运行“更新并启动桌面客户端.bat”。
+    if not defined NO_PAUSE pause
+    exit /b 1
+)
+
 echo [1/3] 正在从 GitHub 拉取 main 最新代码...
 git pull --ff-only origin main
 if errorlevel 1 (
@@ -53,7 +60,12 @@ echo [2/3] 正在按 package-lock.json 恢复依赖...
 call npm.cmd ci
 if errorlevel 1 (
     echo [错误] 依赖安装失败。
-    pause
+    if not defined NO_PAUSE pause
+    exit /b 1
+)
+if not exist "node_modules\.bin\vite.cmd" (
+    echo [错误] 依赖安装未完成：未找到 Vite。请关闭占用中的 SafeVault 后重试。
+    if not defined NO_PAUSE pause
     exit /b 1
 )
 
