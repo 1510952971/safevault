@@ -136,7 +136,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
    ```
 2. 修改代码后执行回归检查：
    ```bash
-   npm ci
+   npm install --prefer-offline --no-audit --no-fund
    npm test
    npm run build
    ```

@@ -56,8 +56,8 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/3] 正在按 package-lock.json 恢复依赖...
-call npm.cmd ci
+echo [2/3] 正在按 package-lock.json 增量检查依赖...
+call npm.cmd install --prefer-offline --no-audit --no-fund
 if errorlevel 1 (
     echo [错误] 依赖安装失败。
     if not defined NO_PAUSE pause
@@ -65,6 +65,11 @@ if errorlevel 1 (
 )
 if not exist "node_modules\.bin\vite.cmd" (
     echo [错误] 依赖安装未完成：未找到 Vite。请关闭占用中的 SafeVault 后重试。
+    if not defined NO_PAUSE pause
+    exit /b 1
+)
+if not exist "node_modules\electron\dist\electron.exe" (
+    echo [错误] Electron 运行文件未准备好，请保持网络畅通后重新运行本脚本。
     if not defined NO_PAUSE pause
     exit /b 1
 )
