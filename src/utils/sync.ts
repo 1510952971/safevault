@@ -335,6 +335,31 @@ export async function loginNasAccount(
     const challengeRes = await fetch(`${cleanUrl}/api/auth/challenge?username=${encodeURIComponent(cleanUser)}`, { credentials: 'include' });
     const challengeData = await challengeRes.json();
     if (!challengeRes.ok || !challengeData.success || !challengeData.challenge) {
+      // 兼容已经部署旧 server、但前端 dist 已先更新的 NAS：旧 server
+      // 没有 challenge 路由，会把请求落到鉴权中间件并返回 401。只有在
+      // 明确识别到这种旧协议响应时才回退，不能在新版认证失败时降级。
+      const isLegacyServer = challengeRes.status === 401
+        && String(challengeData?.message || '').includes('身份凭证失效');
+      if (isLegacyServer) {
+        const legacyRes = await fetch(`${cleanUrl}/api/auth/login`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: cleanUser, authHash })
+        });
+        const legacyData = await legacyRes.json();
+        if (!legacyRes.ok || !legacyData.success) {
+          return { success: false, message: legacyData.message || '账号或密码认证摘要错误' };
+        }
+        return {
+          success: true,
+          token: legacyData.token,
+          salt: saltRes.salt,
+          version: legacyData.version,
+          updatedAt: legacyData.updatedAt,
+          message: '极空间登录成功（兼容旧版服务）'
+        };
+      }
       return { success: false, message: challengeData.message || '获取登录挑战失败' };
     }
     const challengeResponse = await createChallengeResponse(authHash, challengeData.challenge);
