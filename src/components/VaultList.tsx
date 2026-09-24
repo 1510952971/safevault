@@ -16,10 +16,12 @@ interface VaultListProps {
   lockTimeoutMinutes: number;
   hasSecondaryPassword: boolean;
   isSecondaryAuthorized: boolean;
+  isPrivacyShieldEnabled: boolean;
   isSecondaryAuthRequired: boolean;
   onRequestSecondaryAuth: (onSuccess: () => void) => void;
   onOpenSecondaryPasswordModal: () => void;
   onChangeLockTimeout: (mins: number) => void;
+  onTogglePrivacyShield: (enabled: boolean) => void;
   onAddNew: () => void;
   onEditItem: (item: DecryptedVaultItem) => void;
   onDeleteItem: (id: string, title: string) => void;
@@ -46,10 +48,12 @@ export const VaultList: React.FC<VaultListProps> = ({
   lockTimeoutMinutes,
   hasSecondaryPassword,
   isSecondaryAuthorized,
+  isPrivacyShieldEnabled,
   isSecondaryAuthRequired,
   onRequestSecondaryAuth,
   onOpenSecondaryPasswordModal,
   onChangeLockTimeout,
+  onTogglePrivacyShield,
   onAddNew,
   onEditItem,
   onDeleteItem,
@@ -540,8 +544,10 @@ export const VaultList: React.FC<VaultListProps> = ({
           lockTimeoutMinutes={lockTimeoutMinutes}
           hasSecondaryPassword={hasSecondaryPassword}
           isSecondaryAuthorized={isSecondaryAuthorized}
+          isPrivacyShieldEnabled={isPrivacyShieldEnabled}
           onOpenSecondaryPasswordModal={onOpenSecondaryPasswordModal}
           onChangeLockTimeout={onChangeLockTimeout}
+          onTogglePrivacyShield={onTogglePrivacyShield}
           onOpenGenerator={onOpenGenerator}
           onOpenBackup={onOpenBackup}
           onFilterRisky={() => setSelectedCategory('risky')}
@@ -582,8 +588,10 @@ export const VaultList: React.FC<VaultListProps> = ({
                 lockTimeoutMinutes={lockTimeoutMinutes}
                 hasSecondaryPassword={hasSecondaryPassword}
                 isSecondaryAuthorized={isSecondaryAuthorized}
+                isPrivacyShieldEnabled={isPrivacyShieldEnabled}
                 onOpenSecondaryPasswordModal={onOpenSecondaryPasswordModal}
                 onChangeLockTimeout={onChangeLockTimeout}
+                onTogglePrivacyShield={onTogglePrivacyShield}
                 onOpenGenerator={onOpenGenerator}
                 onOpenBackup={onOpenBackup}
                 onFilterRisky={() => {

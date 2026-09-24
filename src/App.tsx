@@ -60,6 +60,14 @@ export const App: React.FC = () => {
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isPrivacyMaskActive, setIsPrivacyMaskActive] = useState(false);
+  const [isPrivacyShieldEnabled, setIsPrivacyShieldEnabled] = useState(() => {
+    try {
+      const stored = window.localStorage.getItem('safevault_privacy_shield_enabled_v1');
+      return stored === null ? true : stored === 'true';
+    } catch {
+      return true;
+    }
+  });
   const [isChangeMasterModalOpen, setIsChangeMasterModalOpen] = useState(false);
   const [isEmergencyKitModalOpen, setIsEmergencyKitModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
@@ -93,6 +101,17 @@ export const App: React.FC = () => {
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('safevault_privacy_shield_enabled_v1', String(isPrivacyShieldEnabled));
+    } catch {
+      // 私有浏览模式或存储被禁用时不影响界面使用。
+    }
+    if (!isPrivacyShieldEnabled) {
+      setIsPrivacyMaskActive(false);
+    }
+  }, [isPrivacyShieldEnabled]);
 
   // 1. 初始化检查本地存储与账号凭证
   useEffect(() => {
@@ -150,9 +169,9 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isLocked, masterKey]);
 
-  // 窗口失焦或切后台时激活防肩窥高斯模糊隐私幕布 (仅在已解锁状态下生效)
+  // 窗口失焦或切后台时激活防肩窥高斯模糊隐私幕布 (仅在已解锁且开关开启时生效)
   useEffect(() => {
-    if (isLocked || !masterKey) {
+    if (isLocked || !masterKey || !isPrivacyShieldEnabled) {
       setIsPrivacyMaskActive(false);
       return;
     }
@@ -174,7 +193,7 @@ export const App: React.FC = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [isLocked, masterKey]);
+  }, [isLocked, masterKey, isPrivacyShieldEnabled]);
 
   // 2. 超时无操作自动锁定机制 (支持实时每秒倒计时与自定义时长)
   const lastActivityRef = useRef<number>(Date.now());
@@ -1001,6 +1020,7 @@ export const App: React.FC = () => {
             lockTimeoutMinutes={vaultMeta?.lockTimeoutMinutes || 3}
             hasSecondaryPassword={hasSecondaryPassword}
             isSecondaryAuthorized={isSecondaryAuthorized}
+            isPrivacyShieldEnabled={isPrivacyShieldEnabled}
             isSecondaryAuthRequired={isSecondaryAuthRequired}
             onRequestSecondaryAuth={handleRequestSecondaryAuth}
             onOpenSecondaryPasswordModal={() => {
@@ -1008,6 +1028,11 @@ export const App: React.FC = () => {
               setIsSecondaryModalOpen(true);
             }}
             onChangeLockTimeout={handleChangeLockTimeout}
+            onTogglePrivacyShield={(enabled) => {
+              setIsPrivacyShieldEnabled(enabled);
+              setIsPrivacyMaskActive(false);
+              addToast('info', enabled ? '后台防窥已开启' : '后台防窥已关闭');
+            }}
             onAddNew={() => {
               setEditingItem(null);
               setIsPasswordModalOpen(true);

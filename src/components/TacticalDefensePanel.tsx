@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Cpu, AlertTriangle, ShieldCheck, CopyCheck, KeyRound, Key, FileText } from 'lucide-react';
+import { Clock, Cpu, AlertTriangle, ShieldCheck, CopyCheck, KeyRound, Key, FileText, EyeOff } from 'lucide-react';
 
 interface TacticalDefensePanelProps {
   weakCount: number;
@@ -8,9 +8,11 @@ interface TacticalDefensePanelProps {
   lockTimeoutMinutes: number;
   hasSecondaryPassword: boolean;
   isSecondaryAuthorized: boolean;
+  isPrivacyShieldEnabled: boolean;
   isNasConnected?: boolean;
   onOpenSecondaryPasswordModal: () => void;
   onChangeLockTimeout: (mins: number) => void;
+  onTogglePrivacyShield: (enabled: boolean) => void;
   onOpenGenerator: () => void;
   onOpenBackup: () => void;
   onFilterRisky: () => void;
@@ -27,9 +29,11 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
   lockTimeoutMinutes,
   hasSecondaryPassword,
   isSecondaryAuthorized,
+  isPrivacyShieldEnabled,
   isNasConnected,
   onOpenSecondaryPasswordModal,
   onChangeLockTimeout,
+  onTogglePrivacyShield,
   onOpenGenerator,
   onOpenBackup,
   onFilterRisky,
@@ -84,6 +88,35 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
                 <option value={30}>30分钟</option>
               </select>
             </div>
+          </div>
+
+          {/* 切换后台防窥隐私幕布 */}
+          <div className="flex items-center justify-between pt-2.5 gap-2">
+            <div className="flex items-center gap-2 text-slate-600 shrink-0 whitespace-nowrap">
+              <EyeOff className={`w-4 h-4 shrink-0 ${isPrivacyShieldEnabled ? 'text-emerald-500' : 'text-slate-400'}`} />
+              <span>后台防窥</span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isPrivacyShieldEnabled}
+              onClick={() => onTogglePrivacyShield(!isPrivacyShieldEnabled)}
+              className={`relative inline-flex h-5 w-10 shrink-0 items-center rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-brand-lime/50 ${
+                isPrivacyShieldEnabled
+                  ? 'bg-emerald-500 border-emerald-600'
+                  : 'bg-slate-200 border-slate-300'
+              }`}
+              title={isPrivacyShieldEnabled ? '关闭切换后台自动防窥' : '开启切换后台自动防窥'}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform ${
+                  isPrivacyShieldEnabled ? 'translate-x-5' : 'translate-x-1'
+                }`}
+              />
+              <span className="sr-only">
+                {isPrivacyShieldEnabled ? '后台防窥已开启' : '后台防窥已关闭'}
+              </span>
+            </button>
           </div>
 
           {/* 二级独立密码查看防护 */}

@@ -79,7 +79,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="shrink-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-3 sm:px-4 lg:px-5 py-2 min-h-14 h-auto flex flex-wrap items-center gap-2 transition-all shadow-xs w-full min-w-0 overflow-visible select-none">
+    <header className="shrink-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-3 sm:px-4 lg:px-5 h-14 flex items-center gap-2 transition-all shadow-xs w-full min-w-0 overflow-visible select-none">
       
       {/* 左侧系统标识与版本 */}
       <div className="flex items-center gap-2.5 min-w-0 shrink whitespace-nowrap">
@@ -106,8 +106,8 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* 右侧战术操作区：空间不足时换行，保持文字说明和下拉菜单完整可见 */}
-      <div className="ml-auto flex-1 min-w-0 flex flex-wrap items-center justify-end gap-1.5 whitespace-nowrap overflow-visible">
+      {/* 右侧战术操作区：始终单行，窗口变窄时隐藏说明文字，保留图标与核心操作 */}
+      <div className="ml-auto flex-1 min-w-0 flex items-center justify-end gap-1.5 whitespace-nowrap overflow-visible">
         {!isLocked && (
           <>
             {/* 终端编号与体量 (超大宽屏展示) */}
@@ -153,12 +153,12 @@ export const Header: React.FC<HeaderProps> = ({
                 {isNasConnected ? (
                   <>
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="font-bold font-mono">👤 {currentAccount || '已联机'}</span>
+                    <span className="hidden xl:inline font-bold font-mono">👤 {currentAccount || '已联机'}</span>
                   </>
                 ) : (
                   <>
                     <CloudOff className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                    <span>极空间未连接</span>
+                    <span className="hidden xl:inline">极空间未连接</span>
                   </>
                 )}
               </button>
@@ -177,7 +177,7 @@ export const Header: React.FC<HeaderProps> = ({
               title="二级查看安全密码，点击管理"
             >
               <KeyRound className="w-3.5 h-3.5 shrink-0" />
-              <span>
+              <span className="hidden xl:inline">
                 二级密码: {hasSecondaryPassword ? (isSecondaryAuthorized ? '已授权' : '保护中') : '未开启'}
               </span>
             </button>
@@ -189,7 +189,7 @@ export const Header: React.FC<HeaderProps> = ({
               title="强密码发生器"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-              <span>密码发生器</span>
+              <span className="hidden xl:inline">密码发生器</span>
             </button>
 
             {/* 备份与恢复 */}
@@ -199,7 +199,7 @@ export const Header: React.FC<HeaderProps> = ({
               title="备份与恢复"
             >
               <DownloadCloud className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-              <span>密文备份</span>
+              <span className="hidden xl:inline">密文备份</span>
             </button>
 
             {/* 更多功能下拉菜单 (优雅收纳 修改主密码、应急救援单、GitHub更新) */}
@@ -213,7 +213,7 @@ export const Header: React.FC<HeaderProps> = ({
                 }`}
                 title="更多安全与运维功能"
               >
-                <span>更多</span>
+                <span className="hidden sm:inline">更多</span>
                 <ChevronDown className={`w-3 h-3 transition-transform ${isMoreOpen ? 'rotate-180' : ''}`} />
               </button>
 
@@ -276,7 +276,7 @@ export const Header: React.FC<HeaderProps> = ({
                 title="立即锁定密码数据库 (锁屏防窥，输入主密码即可快速解锁)"
               >
                 <Lock className="w-3 h-3 text-brand-lime shrink-0" />
-                <span>锁定</span>
+                <span className="hidden xl:inline">锁定</span>
               </button>
 
               {onLogout && (
@@ -286,7 +286,7 @@ export const Header: React.FC<HeaderProps> = ({
                   title="退出当前账号 (返回登录界面，可切换其他账号)"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  <span>退出</span>
+                  <span className="hidden xl:inline">退出</span>
                 </button>
               )}
             </div>
