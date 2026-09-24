@@ -51,13 +51,16 @@ function recordAuthFailure(req, username) {
   else entry.count += 1;
 }
 function clearAuthFailures(req, username) { authFailures.delete(authKey(req, username)); }
-function issueAuthChallenge(req, username) {
+function issueAuthChallenge(username) {
   const challenge = crypto.randomBytes(32).toString('hex');
-  authChallenges.set(`${authKey(req, username)}:${challenge}`, Date.now() + 60 * 1000);
+  // 极空间远程代理可能为“获取挑战”和“提交登录”使用不同的上游
+  // TCP 连接，不能把一次性挑战绑定到 req.socket.remoteAddress。
+  // 挑战本身是 256-bit 随机值、60 秒有效且只能消费一次，已经足够防止重放。
+  authChallenges.set(`${String(username).trim().toLowerCase()}:${challenge}`, Date.now() + 60 * 1000);
   return challenge;
 }
-function consumeAuthChallenge(req, username, challenge) {
-  const key = `${authKey(req, username)}:${challenge}`;
+function consumeAuthChallenge(username, challenge) {
+  const key = `${String(username).trim().toLowerCase()}:${challenge}`;
   const expiresAt = authChallenges.get(key);
   authChallenges.delete(key);
   return Boolean(expiresAt && expiresAt > Date.now());
@@ -459,7 +462,7 @@ const server = http.createServer(async (req, res) => {
       if (pathname === '/api/auth/challenge' && req.method === 'GET') {
         const username = String(reqUrl.searchParams.get('username') || '').trim().toLowerCase();
         if (!db.users[username]) return sendJson(res, 404, { success: false, message: '未找到该账号，请先注册' });
-        return sendJson(res, 200, { success: true, challenge: issueAuthChallenge(req, username) });
+        return sendJson(res, 200, { success: true, challenge: issueAuthChallenge(username) });
       }
 
       // 4. 账号登录
@@ -471,7 +474,7 @@ const server = http.createServer(async (req, res) => {
         }
         const user = db.users[cleanUser];
         let valid = false;
-        if (user && challenge && challengeResponse && consumeAuthChallenge(req, cleanUser, challenge)) {
+        if (user && challenge && challengeResponse && consumeAuthChallenge(cleanUser, challenge)) {
           const expected = crypto.createHmac('sha256', user.authHash).update(challenge).digest('hex');
           const supplied = Buffer.from(String(challengeResponse));
           valid = supplied.length === expected.length
