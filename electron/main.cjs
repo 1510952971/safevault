@@ -6,9 +6,20 @@ const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, commandLine) => {
     const existingWindow = BrowserWindow.getAllWindows()[0];
     if (!existingWindow) return;
+
+    // 更新启动会把最新构建交给已存在的单实例进程，重启主进程以加载最新的 main.cjs 和 dist。
+    // 普通重复启动仍只激活现有窗口，不会创建新的缓存进程。
+    if (commandLine.includes('--safevault-refresh')) {
+      app.relaunch({
+        args: process.argv.slice(1).filter((arg) => arg !== '--safevault-refresh')
+      });
+      app.exit(0);
+      return;
+    }
+
     if (existingWindow.isMinimized()) existingWindow.restore();
     existingWindow.show();
     existingWindow.focus();

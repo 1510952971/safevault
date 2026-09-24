@@ -11,6 +11,7 @@
     "server": "node server/index.js",
     "test": "node tests/test-crypto.js && node tests/test-audit-totp.js && node tests/test-secondary-auth.js && node tests/test-advanced-features.js && node tests/test-sync-protocol.js",
     "desktop": "npm run build && electron electron/main.cjs",
+    "desktop:refresh": "npm run build && electron electron/main.cjs --safevault-refresh",
     "docs:build": "python docs/generate_design_doc.py"
   },
   "dependencies": {

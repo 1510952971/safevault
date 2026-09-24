@@ -2,6 +2,8 @@
 setlocal enabledelayedexpansion
 title SafeVault - ZSpace Docker Image Builder
 
+cd /d "%~dp0"
+
 echo ========================================================
 echo   SafeVault 密码数据库 - 极空间 Docker 镜像导出工具
 echo ========================================================

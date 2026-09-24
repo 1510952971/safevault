@@ -2,6 +2,8 @@
 setlocal enabledelayedexpansion
 title SafeVault - 桌面客户端
 
+cd /d "%~dp0"
+
 echo ========================================================
 echo         SafeVault 密码数据库 - 原生桌面客户端
 echo ========================================================

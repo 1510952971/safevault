@@ -2,6 +2,8 @@
 setlocal enabledelayedexpansion
 title SafeVault - ZSpace Package Generator
 
+cd /d "%~dp0"
+
 echo ========================================================
 echo   SafeVault 密码数据库 - 极空间部署包一键生成器
 echo ========================================================
