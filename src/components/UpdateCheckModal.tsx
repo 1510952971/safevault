@@ -210,15 +210,15 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
                       setResult({
                         success: true,
                         currentVersion: CURRENT_APP_VERSION,
-                        latestVersion: 'v1.2.0',
+                        latestVersion: 'v1.2.1',
                         hasUpdate: true,
-                        releaseName: 'SafeVault v1.2.0 重大功能升级发布',
+                        releaseName: 'SafeVault v1.2.1 极空间代理登录修复',
                         releaseNotes: '【功能更新】\n1. 新增极空间 NAS 容器多端智能双向合并与防覆盖保护机制；\n2. 优化桌面端 Electron 原生独立窗口运行体验；\n3. 增强零知识端到端加密与 GitHub 自动更新检测；\n4. 支持断网离线缓存与 PWA 沉浸式小程序。',
                         publishedAt: new Date().toISOString(),
                         htmlUrl: 'https://github.com/goupfu/safevault/releases',
                         assets: [
-                          { name: 'SafeVault-Setup-v1.2.0.exe', downloadUrl: 'https://github.com/goupfu/safevault/releases', size: 68421000 },
-                          { name: 'SafeVault-Mobile-v1.2.0.apk', downloadUrl: 'https://github.com/goupfu/safevault/releases', size: 12450000 }
+                          { name: 'SafeVault-Setup-v1.2.1.exe', downloadUrl: 'https://github.com/goupfu/safevault/releases', size: 68421000 },
+                          { name: 'SafeVault-Mobile-v1.2.1.apk', downloadUrl: 'https://github.com/goupfu/safevault/releases', size: 12450000 }
                         ]
                       });
                     }}

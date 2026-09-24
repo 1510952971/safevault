@@ -109,7 +109,7 @@ async function runTests() {
   const verRes = await makeRequest({ host: '127.0.0.1', port: TEST_PORT, path: '/api/version', method: 'GET' });
   assert.strictEqual(verRes.status, 200);
   assert.strictEqual(verRes.body.success, true);
-  assert.strictEqual(verRes.body.version, '1.2.0');
+  assert.strictEqual(verRes.body.version, '1.2.1');
 
   // 注册
   const testUser = 'zspace_tester';

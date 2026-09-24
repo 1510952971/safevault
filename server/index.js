@@ -25,7 +25,7 @@ const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, '..', 'dist');
 const REQUIRE_HTTPS = process.env.REQUIRE_HTTPS === 'true';
 const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:3000,null,file://').split(',').map((origin) => origin.trim()).filter(Boolean);
-let SERVER_VERSION = '1.2.0';
+let SERVER_VERSION = '1.2.1';
 const MAX_SNAPSHOTS = 30;
 
 // 认证失败限流：按 IP 与账号分别计数，避免 authHash 被暴力重放。
@@ -652,7 +652,7 @@ const server = http.createServer(async (req, res) => {
       // 10. 极空间在线系统热更新 (In-App Hot Update)
       if (pathname === '/api/system/update' && req.method === 'POST') {
         const body = await parseJsonBody(req);
-        const targetVersion = body.version || 'v1.2.0';
+        const targetVersion = body.version || 'v1.2.1';
         console.log(`[SafeVault Update] 正在执行系统在线热更新至 ${targetVersion}...`);
 
         SERVER_VERSION = targetVersion.replace(/^v/i, '');
@@ -680,6 +680,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log('====================================================');
   console.log(`🚀 SafeVault 极空间 NAS 同步中枢服务已启动`);
+  console.log(`🧩 服务版本: ${SERVER_VERSION}`);
   console.log(`🌐 本地监听端口: http://0.0.0.0:${PORT}`);
   console.log(`📁 数据持久化路径: ${DB_FILE}`);
   console.log(`📦 前端静态资源目录: ${STATIC_DIR}`);

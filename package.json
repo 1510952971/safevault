@@ -1,6 +1,6 @@
 {
   "name": "safevault",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "private": true,
   "description": "零知识强加密个人密码数据库 (支持极空间NAS私有化部署、多端同步与GitHub更新)",
