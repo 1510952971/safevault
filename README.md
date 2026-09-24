@@ -15,7 +15,8 @@ SafeVault 是一款专为个人打造的**高安全性、零知识架构（Zero-
 │   ├── SafeVault_程序系统详细设计说明书.docx   # Word 工业学术排版设计说明书
 │   ├── SafeVault_程序系统详细设计说明书.md     # Markdown 详细设计文档全集
 │   ├── SPEC.md                                  # 阶段零需求规格说明书 (最高宪法)
-│   ├── NAS_DEPLOY.md                            # NAS 私有化部署图文手册
+│   ├── 极空间NAS私有化部署与远程同步指南.md       # NAS 私有化部署图文手册
+│   ├── 多电脑协作与发布更新规范.md                # GitHub 多电脑同步与发布规范
 │   └── generate_design_doc.py                   # 设计文档一键生成脚本
 ├── deploy/                    # 【部署配置专区】NAS / Docker 配置独立存放
 │   ├── Dockerfile                               # 生产容器多阶段构建 (镜像 < 25MB)
@@ -116,4 +117,53 @@ npm run build
 ```bash
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
-即可在局域网通过 `http://<NAS_IP>:8088` 访问。详细部署步骤请查阅 [docs/NAS_DEPLOY.md](docs/NAS_DEPLOY.md)。
+即可在局域网通过 `http://<NAS_IP>:8088` 访问。详细部署步骤请查阅 [极空间 NAS 私有化部署与远程同步指南](docs/极空间NAS私有化部署与远程同步指南.md)。
+
+---
+
+## 🔄 多电脑同步与发布更新规范
+
+项目统一以 GitHub `main` 分支为唯一代码源。不同电脑之间不要互相复制整个项目文件夹，也不要复制 `node_modules`、`data` 或旧的 `dist` 目录。
+
+### 在修改电脑上发布更新
+
+1. 确认当前分支为 `main`，并先同步远程：
+   ```bash
+   git checkout main
+   git pull --ff-only origin main
+   ```
+2. 修改代码后执行回归检查：
+   ```bash
+   npm ci
+   npm test
+   npm run build
+   ```
+3. 确认没有把密码数据库、日志或临时文件加入提交：
+   ```bash
+   git status
+   git add <本次修改的文件>
+   git commit -m "说明本次更新"
+   git push origin main
+   ```
+
+也可以直接运行根目录的 **`同步最新代码.bat`** 完成“检查分支 → 拉取代码 → 恢复依赖 → 构建”的标准流程。脚本发现未提交修改时会停止，不会覆盖本地工作。
+
+### 在其他电脑获取更新
+
+- 已有项目：双击 **`同步最新代码.bat`**；
+- 新电脑：先 `git clone https://github.com/1510952971/safevault.git`，进入项目目录后运行该脚本；
+- 确认版本：
+  ```bash
+  git log -1 --oneline
+  ```
+  看到最新提交后，再运行 **`启动桌面客户端.bat`**。桌面启动脚本会自动重新构建资源，不使用旧缓存。
+
+### 极空间 NAS 发布更新
+
+1. 在已经拉取最新代码的电脑上运行 **`生成极空间部署包.bat`**；
+2. 将 `deploy\zspace-package\dist` 和 `deploy\zspace-package\server` 覆盖到极空间原 SafeVault 目录；
+3. 不删除、不覆盖极空间原目录中的 `data` 文件夹；
+4. 在极空间 Docker 中重启原容器；
+5. 访问 `http://NAS地址:8088/api/version` 检查服务版本和账号数量。
+
+`dist/assets` 与 `deploy/zspace-package` 属于构建产物，按规范不提交到 GitHub；每台电脑拉取代码后必须先构建，再生成 NAS 部署包。完整操作手册见 [docs/多电脑协作与发布更新规范.md](docs/多电脑协作与发布更新规范.md)。
