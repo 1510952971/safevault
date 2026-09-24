@@ -547,6 +547,15 @@ const server = http.createServer(async (req, res) => {
           return sendJson(res, 400, { success: false, message: '推送数据必须包含 vaultMeta' });
         }
 
+        // 新服务端不允许旧客户端在没有版本基线的情况下覆盖已有云端数据。
+        if (currentUser.vaultMeta && !Number.isInteger(clientVersion)) {
+          return sendJson(res, 428, {
+            success: false,
+            code: 'VERSION_REQUIRED',
+            message: '当前客户端版本过旧，必须先更新后再同步，以免覆盖极空间上的新数据。'
+          });
+        }
+
         // 乐观并发锁：旧设备不得直接覆盖已经被其他设备更新的版本。
         if (Number.isInteger(clientVersion) && clientVersion !== currentUser.version) {
           return sendJson(res, 409, {
