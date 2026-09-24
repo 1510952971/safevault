@@ -47,9 +47,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside className="w-full lg:w-52 xl:w-60 shrink-0 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 lg:h-full flex flex-col justify-between overflow-hidden select-none z-10 shadow-sm lg:shadow-none">
       {/* 顶部标题区 (桌面端专属标题) */}
       <div className="hidden lg:flex px-4 pr-20 py-3 bg-slate-50/80 border-b border-slate-200 items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-start gap-2 min-w-0">
           <span className="w-1.5 h-3.5 bg-brand-lime rounded-full inline-block" />
-          <span className="font-mono text-xs font-bold text-slate-700 tracking-wider">INDEX // 分类索引</span>
+          <div className="min-w-0 leading-tight">
+            <span className="text-xs font-bold text-slate-700 block whitespace-nowrap">分类索引</span>
+            <span className="text-[10px] font-mono text-slate-400 block whitespace-nowrap mt-0.5">INDEX // CATEGORY INDEX</span>
+          </div>
         </div>
         <span className="text-[10px] font-mono text-slate-400 bg-slate-200/60 px-1.5 py-0.5 rounded">#0027</span>
       </div>
