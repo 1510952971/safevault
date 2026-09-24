@@ -91,6 +91,13 @@ export const VaultList: React.FC<VaultListProps> = ({
     }
   });
   const [isDefenseOpen, setIsDefenseOpen] = useState(false);
+  const [isDefensePinned, setIsDefensePinned] = useState(() => {
+    try {
+      return window.localStorage.getItem('safevault_defense_pinned_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   React.useEffect(() => {
     try {
@@ -100,6 +107,14 @@ export const VaultList: React.FC<VaultListProps> = ({
       // 私有浏览模式或存储被禁用时不影响界面使用。
     }
   }, [isSidebarCollapsed, isSidebarPinned]);
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem('safevault_defense_pinned_v1', String(isDefensePinned));
+    } catch {
+      // 私有浏览模式或存储被禁用时不影响界面使用。
+    }
+  }, [isDefensePinned]);
 
   const isTrashMode = selectedCategory === 'trash';
   const activeItems = useMemo(() => items.filter((i) => !i.isDeleted), [items]);
@@ -171,7 +186,7 @@ export const VaultList: React.FC<VaultListProps> = ({
   }, [activeItems]);
 
   return (
-    <div className={`flex-1 flex h-full min-w-0 overflow-hidden w-full relative ${isSidebarPinned ? 'flex-row' : 'flex-col 2xl:flex-row'}`}>
+    <div className={`flex-1 flex h-full min-w-0 overflow-hidden w-full relative ${isSidebarPinned || isDefensePinned ? 'flex-row' : 'flex-col 2xl:flex-row'}`}>
       {/* 1. 左侧顶天立地分类导航停靠栏 */}
       <div className={`${isSidebarPinned ? 'flex' : 'hidden 2xl:flex'} shrink-0`}>
         {isSidebarCollapsed ? (
@@ -297,14 +312,16 @@ export const VaultList: React.FC<VaultListProps> = ({
               分类
             </button>
           )}
-          <button
-            type="button"
-            className="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 flex items-center gap-1.5 shadow-sm"
-            onClick={() => setIsDefenseOpen(true)}
-          >
-            <Shield className="w-3.5 h-3.5 text-emerald-600" />
-            安全审计
-          </button>
+          {!isDefensePinned && (
+            <button
+              type="button"
+              className="px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs font-semibold text-slate-700 flex items-center gap-1.5 shadow-sm"
+              onClick={() => setIsDefenseOpen(true)}
+            >
+              <Shield className="w-3.5 h-3.5 text-emerald-600" />
+              安全审计
+            </button>
+          )}
         </div>
         {/* 废纸篓模式横幅 或 正常模式保险库总览 HUD */}
         {isTrashMode ? (
@@ -536,7 +553,7 @@ export const VaultList: React.FC<VaultListProps> = ({
       </section>
 
       {/* 3. 右侧安全审计与防御面板 */}
-      <div className="hidden 2xl:flex shrink-0">
+      <div className={`${isDefensePinned ? 'flex' : 'hidden 2xl:flex'} shrink-0 h-full`}>
         <TacticalDefensePanel
           weakCount={audit.weakCount}
           reusedCount={audit.reusedCount}
@@ -545,9 +562,11 @@ export const VaultList: React.FC<VaultListProps> = ({
           hasSecondaryPassword={hasSecondaryPassword}
           isSecondaryAuthorized={isSecondaryAuthorized}
           isPrivacyShieldEnabled={isPrivacyShieldEnabled}
+          isPinned={isDefensePinned}
           onOpenSecondaryPasswordModal={onOpenSecondaryPasswordModal}
           onChangeLockTimeout={onChangeLockTimeout}
           onTogglePrivacyShield={onTogglePrivacyShield}
+          onTogglePinned={() => setIsDefensePinned((value) => !value)}
           onOpenGenerator={onOpenGenerator}
           onOpenBackup={onOpenBackup}
           onFilterRisky={() => setSelectedCategory('risky')}
@@ -560,7 +579,7 @@ export const VaultList: React.FC<VaultListProps> = ({
       </div>
 
       {/* 窄窗口下按需打开安全审计侧栏 */}
-      {isDefenseOpen && (
+      {isDefenseOpen && !isDefensePinned && (
         <div className="fixed inset-0 z-50 2xl:hidden flex justify-end">
           <button
             type="button"
@@ -568,17 +587,31 @@ export const VaultList: React.FC<VaultListProps> = ({
             className="absolute inset-0 bg-slate-950/40"
             onClick={() => setIsDefenseOpen(false)}
           />
-          <div className="relative h-full w-full max-w-sm bg-white shadow-2xl">
+          <div className="relative h-full w-52 xl:w-60 max-w-[85vw] bg-white shadow-2xl">
             <div className="h-12 px-4 border-b border-slate-200 flex items-center justify-between">
               <span className="text-xs font-bold text-slate-700">安全审计与防御中枢</span>
-              <button
-                type="button"
-                aria-label="关闭安全审计侧栏"
-                className="p-1.5 text-slate-500 hover:text-slate-900"
-                onClick={() => setIsDefenseOpen(false)}
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  aria-label="安全栏常驻"
+                  title="安全栏常驻"
+                  className="p-1.5 text-slate-500 hover:text-slate-900"
+                  onClick={() => {
+                    setIsDefensePinned(true);
+                    setIsDefenseOpen(false);
+                  }}
+                >
+                  <Pin className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="关闭安全审计侧栏"
+                  className="p-1.5 text-slate-500 hover:text-slate-900"
+                  onClick={() => setIsDefenseOpen(false)}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             <div className="h-[calc(100%-3rem)] overflow-y-auto">
               <TacticalDefensePanel
@@ -589,9 +622,11 @@ export const VaultList: React.FC<VaultListProps> = ({
                 hasSecondaryPassword={hasSecondaryPassword}
                 isSecondaryAuthorized={isSecondaryAuthorized}
                 isPrivacyShieldEnabled={isPrivacyShieldEnabled}
+                isPinned={isDefensePinned}
                 onOpenSecondaryPasswordModal={onOpenSecondaryPasswordModal}
                 onChangeLockTimeout={onChangeLockTimeout}
                 onTogglePrivacyShield={onTogglePrivacyShield}
+                onTogglePinned={() => setIsDefensePinned((value) => !value)}
                 onOpenGenerator={onOpenGenerator}
                 onOpenBackup={onOpenBackup}
                 onFilterRisky={() => {

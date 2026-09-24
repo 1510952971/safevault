@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Cpu, AlertTriangle, ShieldCheck, CopyCheck, KeyRound, Key, FileText, EyeOff } from 'lucide-react';
+import { Clock, Cpu, AlertTriangle, ShieldCheck, CopyCheck, KeyRound, Key, FileText, EyeOff, Pin, PinOff } from 'lucide-react';
 
 interface TacticalDefensePanelProps {
   weakCount: number;
@@ -9,10 +9,12 @@ interface TacticalDefensePanelProps {
   hasSecondaryPassword: boolean;
   isSecondaryAuthorized: boolean;
   isPrivacyShieldEnabled: boolean;
+  isPinned: boolean;
   isNasConnected?: boolean;
   onOpenSecondaryPasswordModal: () => void;
   onChangeLockTimeout: (mins: number) => void;
   onTogglePrivacyShield: (enabled: boolean) => void;
+  onTogglePinned: () => void;
   onOpenGenerator: () => void;
   onOpenBackup: () => void;
   onFilterRisky: () => void;
@@ -30,10 +32,12 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
   hasSecondaryPassword,
   isSecondaryAuthorized,
   isPrivacyShieldEnabled,
+  isPinned,
   isNasConnected,
   onOpenSecondaryPasswordModal,
   onChangeLockTimeout,
   onTogglePrivacyShield,
+  onTogglePinned,
   onOpenGenerator,
   onOpenBackup,
   onFilterRisky,
@@ -51,7 +55,7 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
   };
 
   return (
-    <aside className="w-full lg:w-72 xl:w-80 shrink-0 bg-white border-t lg:border-t-0 lg:border-l border-slate-200 lg:h-full flex flex-col justify-between overflow-y-auto p-4 xl:p-5 select-none z-10 scrollbar-none shadow-sm lg:shadow-none">
+    <aside className={`${isPinned ? 'w-72 xl:w-80' : 'w-full lg:w-72 xl:w-80'} shrink-0 bg-white border-t lg:border-t-0 lg:border-l border-slate-200 lg:h-full flex flex-col justify-between overflow-y-auto p-4 xl:p-5 select-none z-10 scrollbar-none shadow-sm lg:shadow-none`}>
       <div className="space-y-4">
         {/* 面板标题 */}
         <div className="border-l-4 border-brand-lime pl-2.5 pb-1 flex items-center justify-between">
@@ -59,7 +63,18 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
             <h3 className="text-sm font-bold text-slate-900">安全审计与防御中枢</h3>
             <span className="text-[10px] font-mono text-slate-400">AUDIT & DEFENSE // ACTIVE</span>
           </div>
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="中枢正常运行中" />
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="中枢正常运行中" />
+            <button
+              type="button"
+              aria-label={isPinned ? '取消安全栏常驻' : '安全栏常驻'}
+              title={isPinned ? '取消安全栏常驻' : '安全栏常驻'}
+              className="p-1 rounded text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors"
+              onClick={onTogglePinned}
+            >
+              {isPinned ? <Pin className="w-3.5 h-3.5" /> : <PinOff className="w-3.5 h-3.5" />}
+            </button>
+          </div>
         </div>
 
         {/* 核心安全指标列表 */}
