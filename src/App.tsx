@@ -39,6 +39,7 @@ import {
   normalizeServerUrl,
   getDeviceIdentifier,
   logoutNasAccount,
+  getNasSyncStatus,
   mergeVaultItems,
   NasSyncConfig
 } from './utils/sync';
@@ -317,7 +318,7 @@ export const App: React.FC = () => {
         for (const it of decryptedList) {
           encList.push(await encryptVaultItem(derivedKey, it, it.id));
         }
-        await pushVaultToNas(cleanUrl, sessionToken, effectiveMeta, encList, getDeviceIdentifier());
+        await pushVaultToNas(cleanUrl, sessionToken, effectiveMeta, encList, getDeviceIdentifier(), pullRes.version);
       }
 
       // 3. 持久化到本地存储
@@ -334,7 +335,8 @@ export const App: React.FC = () => {
         token: sessionToken,
         salt: loginRes.salt,
         lastSyncTime: pullRes.updatedAt || new Date().toISOString(),
-        autoSync: true
+        autoSync: true,
+        remoteVersion: pullRes.version ?? loginRes.version
       };
       saveNasSyncConfig(newCfg);
       setNasConfig(newCfg);
@@ -403,7 +405,7 @@ export const App: React.FC = () => {
 
       // 3. 推送初始元数据上云开户
       const sessionToken = regRes.token || '';
-      await pushVaultToNas(cleanUrl, sessionToken, metaToUse, initialEncrypted, getDeviceIdentifier());
+      await pushVaultToNas(cleanUrl, sessionToken, metaToUse, initialEncrypted, getDeviceIdentifier(), regRes.version);
 
       saveStoredVaultMeta(metaToUse);
       saveStoredEncryptedItems(initialEncrypted);
@@ -414,7 +416,8 @@ export const App: React.FC = () => {
         token: sessionToken,
         salt: regRes.salt,
         lastSyncTime: new Date().toISOString(),
-        autoSync: true
+        autoSync: true,
+        remoteVersion: regRes.version
       };
       saveNasSyncConfig(newCfg);
       setNasConfig(newCfg);
@@ -469,13 +472,19 @@ export const App: React.FC = () => {
     const cfg = loadNasSyncConfig();
     if (!cfg?.token) return;
     try {
+      const status = await getNasSyncStatus(cfg.serverUrl, cfg.token);
+      if (!status.success || typeof status.version !== 'number') return;
       const encrypted = [];
       for (const it of currentItems) {
         encrypted.push(await encryptVaultItem(key, it, it.id));
       }
-      const res = await pushVaultToNas(cfg.serverUrl, cfg.token, meta, encrypted, getDeviceIdentifier());
+      const res = await pushVaultToNas(cfg.serverUrl, cfg.token, meta, encrypted, getDeviceIdentifier(), status.version);
       if (res.success) {
-        const updatedCfg = { ...cfg, lastSyncTime: res.updatedAt || new Date().toISOString() };
+        const updatedCfg = {
+          ...cfg,
+          lastSyncTime: res.updatedAt || new Date().toISOString(),
+          remoteVersion: res.version
+        };
         saveNasSyncConfig(updatedCfg);
         setNasConfig(updatedCfg);
       }
@@ -514,7 +523,7 @@ export const App: React.FC = () => {
 
         // 解锁后后台自动与极空间云端比对最新版本（多端无感双向对齐）
         const cfg = loadNasSyncConfig();
-        if (cfg?.token && cfg?.serverUrl) {
+        if (cfg?.token) {
           (async () => {
             try {
               const pullRes = await pullVaultFromNas(cfg.serverUrl, cfg.token);
@@ -538,7 +547,14 @@ export const App: React.FC = () => {
                   for (const it of mergedItems) {
                     fullEncrypted.push(await encryptVaultItem(result.masterKey!, it, it.id));
                   }
-                  await pushVaultToNas(cfg.serverUrl, cfg.token, pullRes.vaultMeta || vaultMeta, fullEncrypted, getDeviceIdentifier());
+                  await pushVaultToNas(
+                    cfg.serverUrl,
+                    cfg.token,
+                    pullRes.vaultMeta || vaultMeta,
+                    fullEncrypted,
+                    getDeviceIdentifier(),
+                    pullRes.version
+                  );
                 }
               }
             } catch (syncErr) {

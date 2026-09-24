@@ -18,6 +18,17 @@ export interface NasSyncConfig {
   salt: string;            // 客户端账户盐值
   lastSyncTime: string | null; // 最后一次成功同步的时间戳
   autoSync: boolean;       // 是否开启启动/解锁时自动同步
+  remoteVersion?: number;   // 最近一次确认的云端版本，用于防止旧设备覆盖新数据
+}
+
+export interface NasBackupSummary {
+  id: string;
+  version: number;
+  updatedAt: string | null;
+  createdAt: string | null;
+  reason: string;
+  deviceName: string;
+  itemsCount: number;
 }
 
 const NAS_CONFIG_KEY = 'safevault_nas_sync_config';
@@ -227,6 +238,8 @@ export async function registerNasAccount(
   success: boolean;
   token?: string;
   salt?: string;
+  version?: number;
+  updatedAt?: string;
   message?: string;
 }> {
   try {
@@ -253,7 +266,10 @@ export async function registerNasAccount(
 
     return {
       success: true,
+      token: data.token,
       salt,
+      version: data.version,
+      updatedAt: data.updatedAt,
       message: '极空间同步账号注册成功'
     };
   } catch (err: unknown) {
@@ -272,6 +288,8 @@ export async function loginNasAccount(
   success: boolean;
   token?: string;
   salt?: string;
+  version?: number;
+  updatedAt?: string;
   message?: string;
 }> {
   try {
@@ -313,7 +331,10 @@ export async function loginNasAccount(
 
     return {
       success: true,
+      token: data.token,
       salt: saltRes.salt,
+      version: data.version,
+      updatedAt: data.updatedAt,
       message: '极空间登录成功'
     };
   } catch (err: unknown) {
@@ -344,6 +365,7 @@ export async function getNasSyncStatus(
   updatedAt?: string;
   hasData?: boolean;
   itemsCount?: number;
+  backupCount?: number;
   message?: string;
 }> {
   try {
@@ -361,8 +383,63 @@ export async function getNasSyncStatus(
       version: data.version,
       updatedAt: data.updatedAt,
       hasData: data.hasData,
-      itemsCount: data.itemsCount
+      itemsCount: data.itemsCount,
+      backupCount: data.backupCount
     };
+  } catch (err: unknown) {
+    return { success: false, message: err instanceof Error ? err.message : '网络请求失败' };
+  }
+}
+
+/** 获取云端历史备份索引。密文内容只有在真正回滚时才由服务端读取。 */
+export async function getNasBackups(
+  serverUrl: string,
+  token: string
+): Promise<{
+  success: boolean;
+  currentVersion?: number;
+  backups?: NasBackupSummary[];
+  message?: string;
+}> {
+  try {
+    const cleanUrl = normalizeServerUrl(serverUrl);
+    const res = await fetch(`${cleanUrl}/api/sync/backups`, {
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) return { success: false, message: data.message || '读取历史备份失败' };
+    return { success: true, currentVersion: data.currentVersion, backups: data.backups || [] };
+  } catch (err: unknown) {
+    return { success: false, message: err instanceof Error ? err.message : '网络请求失败' };
+  }
+}
+
+/** 回滚到指定云端历史版本，服务端会先备份当前版本并执行并发校验。 */
+export async function rollbackNasBackup(
+  serverUrl: string,
+  token: string,
+  snapshotId: string,
+  expectedVersion: number,
+  deviceName?: string
+): Promise<{
+  success: boolean;
+  version?: number;
+  updatedAt?: string;
+  itemsCount?: number;
+  message?: string;
+}> {
+  try {
+    const cleanUrl = normalizeServerUrl(serverUrl);
+    const res = await fetch(`${cleanUrl}/api/sync/rollback`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ snapshotId, expectedVersion, deviceName: deviceName || getDeviceIdentifier() })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) return { success: false, message: data.message || '历史版本回滚失败' };
+    return { success: true, version: data.version, updatedAt: data.updatedAt, itemsCount: data.itemsCount, message: data.message };
   } catch (err: unknown) {
     return { success: false, message: err instanceof Error ? err.message : '网络请求失败' };
   }
@@ -376,12 +453,14 @@ export async function pushVaultToNas(
   token: string,
   vaultMeta: VaultMeta,
   encryptedItems: EncryptedVaultItem[],
-  deviceName?: string
+  deviceName?: string,
+  expectedVersion?: number
 ): Promise<{
   success: boolean;
   version?: number;
   updatedAt?: string;
   itemsCount?: number;
+  code?: string;
   message?: string;
 }> {
   try {
@@ -398,13 +477,14 @@ export async function pushVaultToNas(
       body: JSON.stringify({
         vaultMeta,
         encryptedItems,
-        deviceName: device
+        deviceName: device,
+        clientVersion: expectedVersion
       })
     });
 
     const data = await res.json();
     if (!res.ok || !data.success) {
-      return { success: false, message: data.message || '数据推送失败' };
+      return { success: false, code: data.code, version: data.version, message: data.message || '数据推送失败' };
     }
 
     return {
@@ -412,6 +492,7 @@ export async function pushVaultToNas(
       version: data.version,
       updatedAt: data.updatedAt,
       itemsCount: data.itemsCount,
+      code: data.code,
       message: '密文数据已安全推送至极空间 NAS'
     };
   } catch (err: unknown) {

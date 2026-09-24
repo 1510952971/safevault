@@ -21,10 +21,12 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 8088;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'vault-store.json');
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, '..', 'dist');
 const REQUIRE_HTTPS = process.env.REQUIRE_HTTPS === 'true';
-const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:3000').split(',').map((origin) => origin.trim()).filter(Boolean);
-let SERVER_VERSION = '1.1.0';
+const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:3000,null,file://').split(',').map((origin) => origin.trim()).filter(Boolean);
+let SERVER_VERSION = '1.2.0';
+const MAX_SNAPSHOTS = 30;
 
 // 认证失败限流：按 IP 与账号分别计数，避免 authHash 被暴力重放。
 const authFailures = new Map();
@@ -64,6 +66,9 @@ function consumeAuthChallenge(req, username, challenge) {
 // 确保持久化数据目录存在
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+if (!fs.existsSync(BACKUP_DIR)) {
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
 }
 
 // 内存数据库与持久化
@@ -109,6 +114,101 @@ function saveDatabase() {
       console.error('[SafeVault DB] 持久化落盘失败:', directErr);
     }
   }
+}
+
+function writeJsonAtomic(filePath, value) {
+  const tempFile = `${filePath}.tmp.${Date.now()}.${crypto.randomBytes(4).toString('hex')}`;
+  fs.writeFileSync(tempFile, JSON.stringify(value, null, 2), 'utf-8');
+  fs.renameSync(tempFile, filePath);
+}
+
+function backupDirectoryFor(username) {
+  const userKey = crypto.createHash('sha256').update(String(username)).digest('hex').slice(0, 24);
+  const directory = path.join(BACKUP_DIR, userKey);
+  if (!fs.existsSync(directory)) fs.mkdirSync(directory, { recursive: true });
+  return directory;
+}
+
+/**
+ * 在覆盖云端当前版本前生成独立历史快照。
+ * 快照文件与 vault-store.json 同属 data 映射目录，升级容器不会丢失。
+ */
+function createUserSnapshot(username, currentUser, reason, deviceName) {
+  if (!currentUser?.vaultMeta) return null;
+
+  const createdAt = new Date().toISOString();
+  const snapshotId = `v${currentUser.version || 1}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+  const fileName = `${snapshotId}.json`;
+  const snapshot = {
+    id: snapshotId,
+    version: currentUser.version || 1,
+    updatedAt: currentUser.updatedAt || createdAt,
+    createdAt,
+    reason: reason || 'before-update',
+    deviceName: deviceName || 'Unknown',
+    itemsCount: Array.isArray(currentUser.encryptedItems) ? currentUser.encryptedItems.length : 0,
+    vaultMeta: currentUser.vaultMeta,
+    encryptedItems: Array.isArray(currentUser.encryptedItems) ? currentUser.encryptedItems : []
+  };
+
+  const directory = backupDirectoryFor(username);
+  writeJsonAtomic(path.join(directory, fileName), snapshot);
+
+  const previous = Array.isArray(currentUser.snapshots) ? currentUser.snapshots : [];
+  currentUser.snapshots = [
+    {
+      id: snapshot.id,
+      version: snapshot.version,
+      updatedAt: snapshot.updatedAt,
+      createdAt: snapshot.createdAt,
+      reason: snapshot.reason,
+      deviceName: snapshot.deviceName,
+      itemsCount: snapshot.itemsCount,
+      fileName
+    },
+    ...previous
+  ].slice(0, MAX_SNAPSHOTS);
+
+  const retainedFiles = new Set(currentUser.snapshots.map((entry) => entry.fileName).filter(Boolean));
+  for (const oldFile of fs.readdirSync(directory)) {
+    if (oldFile.endsWith('.json') && !retainedFiles.has(oldFile)) {
+      try { fs.unlinkSync(path.join(directory, oldFile)); } catch {}
+    }
+  }
+  return snapshot;
+}
+
+function listUserSnapshots(username, currentUser) {
+  return (Array.isArray(currentUser?.snapshots) ? currentUser.snapshots : [])
+    .map((entry) => ({
+      id: entry.id || `legacy-v${entry.version || 0}-${entry.updatedAt || 'unknown'}`,
+      version: entry.version || 0,
+      updatedAt: entry.updatedAt || entry.createdAt || null,
+      createdAt: entry.createdAt || entry.updatedAt || null,
+      reason: entry.reason || '历史版本',
+      deviceName: entry.deviceName || 'Unknown',
+      itemsCount: Number.isFinite(entry.itemsCount)
+        ? entry.itemsCount
+        : (Array.isArray(entry.encryptedItems) ? entry.encryptedItems.length : 0),
+      fileName: entry.fileName || null
+    }))
+    .filter((entry, index, list) => list.findIndex((candidate) => candidate.id === entry.id) === index);
+}
+
+function readUserSnapshot(username, currentUser, snapshotId) {
+  const entry = (Array.isArray(currentUser?.snapshots) ? currentUser.snapshots : [])
+    .find((candidate) => (candidate.id || `legacy-v${candidate.version || 0}-${candidate.updatedAt || 'unknown'}`) === snapshotId);
+  if (!entry) return null;
+
+  if (entry.fileName) {
+    const filePath = path.join(backupDirectoryFor(username), entry.fileName);
+    if (!fs.existsSync(filePath)) return null;
+    try { return JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch { return null; }
+  }
+
+  // 兼容旧版本直接把快照内嵌在 vault-store.json 的格式。
+  if (entry.vaultMeta) return entry;
+  return null;
 }
 
 loadDatabase();
@@ -216,6 +316,9 @@ function parseCookies(req) {
 
 function getCorsOrigin(req) {
   const origin = String(req.headers.origin || '');
+  // Electron 生产桌面端通过 file:// 加载，部分 Chromium 版本会发送 Origin: null。
+  // 桌面端同步同时使用 Bearer Token，不依赖跨域 Cookie。
+  if (origin === 'null' || origin.startsWith('file://')) return origin || 'null';
   return CORS_ORIGINS.includes(origin) ? origin : CORS_ORIGINS[0];
 }
 
@@ -331,7 +434,10 @@ const server = http.createServer(async (req, res) => {
           success: true,
           message: '极空间账号注册成功',
           username: cleanUser,
-          salt
+          salt,
+          token,
+          version: db.users[cleanUser].version,
+          updatedAt: db.users[cleanUser].updatedAt
         });
       }
 
@@ -384,6 +490,7 @@ const server = http.createServer(async (req, res) => {
           success: true,
           message: '登录极空间成功',
           username: cleanUser,
+          token,
           salt: user.salt,
           version: user.version,
           updatedAt: user.updatedAt
@@ -419,30 +526,46 @@ const server = http.createServer(async (req, res) => {
           version: currentUser.version,
           updatedAt: currentUser.updatedAt,
           hasData: Boolean(currentUser.vaultMeta && currentUser.vaultMeta.testCipher),
-          itemsCount: currentUser.encryptedItems.length
+          itemsCount: currentUser.encryptedItems.length,
+          backupCount: Array.isArray(currentUser.snapshots) ? currentUser.snapshots.length : 0
         });
       }
 
-      // 6. 推送密文数据至云端 (Push)
+      // 6. 查询云端历史快照（只返回索引，不返回密文）
+      if (pathname === '/api/sync/backups' && req.method === 'GET') {
+        return sendJson(res, 200, {
+          success: true,
+          currentVersion: currentUser.version,
+          backups: listUserSnapshots(authUsername, currentUser)
+        });
+      }
+
+      // 7. 推送密文数据至云端 (Push)
       if (pathname === '/api/sync/push' && req.method === 'POST') {
         const { vaultMeta, encryptedItems, clientVersion, deviceName } = await parseJsonBody(req);
         if (!vaultMeta) {
           return sendJson(res, 400, { success: false, message: '推送数据必须包含 vaultMeta' });
         }
 
-        // 自动历史快照备份：覆盖前存档当前版本，支持极空间磁盘级防误删回滚
-        if (currentUser.vaultMeta && Array.isArray(currentUser.encryptedItems) && currentUser.encryptedItems.length > 0) {
-          if (!currentUser.snapshots) currentUser.snapshots = [];
-          currentUser.snapshots.unshift({
-            version: currentUser.version || 1,
-            updatedAt: currentUser.updatedAt || new Date().toISOString(),
-            itemsCount: currentUser.encryptedItems.length,
-            vaultMeta: currentUser.vaultMeta,
-            encryptedItems: currentUser.encryptedItems
+        // 乐观并发锁：旧设备不得直接覆盖已经被其他设备更新的版本。
+        if (Number.isInteger(clientVersion) && clientVersion !== currentUser.version) {
+          return sendJson(res, 409, {
+            success: false,
+            code: 'VERSION_CONFLICT',
+            message: `云端已经更新到 v${currentUser.version}，当前设备基于 v${clientVersion}，为防止覆盖新数据，本次推送已拒绝。请先执行智能双向同步。`,
+            version: currentUser.version,
+            updatedAt: currentUser.updatedAt,
+            itemsCount: Array.isArray(currentUser.encryptedItems) ? currentUser.encryptedItems.length : 0
           });
-          // 最多保留最近 10 个历史版本快照
-          if (currentUser.snapshots.length > 10) {
-            currentUser.snapshots = currentUser.snapshots.slice(0, 10);
+        }
+
+        // 覆盖前先写入独立历史快照。快照写失败时中止更新，保证不会出现“更新成功但无法回滚”。
+        if (currentUser.vaultMeta) {
+          try {
+            createUserSnapshot(authUsername, currentUser, 'before-push', deviceName);
+          } catch (backupError) {
+            console.error('[SafeVault Backup] 历史快照写入失败:', backupError);
+            return sendJson(res, 507, { success: false, code: 'BACKUP_FAILED', message: '历史备份写入失败，本次推送已取消，云端数据未改变' });
           }
         }
 
@@ -474,7 +597,47 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // 8. 极空间在线系统热更新 (In-App Hot Update)
+      // 9. 从指定历史快照回滚。回滚前同样会先备份当前版本。
+      if (pathname === '/api/sync/rollback' && req.method === 'POST') {
+        const { snapshotId, expectedVersion, deviceName } = await parseJsonBody(req);
+        if (!snapshotId) return sendJson(res, 400, { success: false, message: '缺少要回滚的历史版本编号' });
+        if (Number.isInteger(expectedVersion) && expectedVersion !== currentUser.version) {
+          return sendJson(res, 409, {
+            success: false,
+            code: 'VERSION_CONFLICT',
+            message: `云端已更新到 v${currentUser.version}，请刷新历史版本列表后再回滚`,
+            version: currentUser.version
+          });
+        }
+
+        const snapshot = readUserSnapshot(authUsername, currentUser, snapshotId);
+        if (!snapshot?.vaultMeta || !Array.isArray(snapshot.encryptedItems)) {
+          return sendJson(res, 404, { success: false, message: '历史备份不存在或已损坏' });
+        }
+
+        try {
+          createUserSnapshot(authUsername, currentUser, 'before-rollback', deviceName);
+        } catch (backupError) {
+          console.error('[SafeVault Backup] 回滚前快照写入失败:', backupError);
+          return sendJson(res, 507, { success: false, code: 'BACKUP_FAILED', message: '回滚前备份失败，当前云端数据未改变' });
+        }
+
+        currentUser.vaultMeta = snapshot.vaultMeta;
+        currentUser.encryptedItems = snapshot.encryptedItems;
+        currentUser.version = (currentUser.version || 0) + 1;
+        currentUser.updatedAt = new Date().toISOString();
+        saveDatabase();
+
+        return sendJson(res, 200, {
+          success: true,
+          message: `已回滚到历史版本 v${snapshot.version}`,
+          version: currentUser.version,
+          updatedAt: currentUser.updatedAt,
+          itemsCount: currentUser.encryptedItems.length
+        });
+      }
+
+      // 10. 极空间在线系统热更新 (In-App Hot Update)
       if (pathname === '/api/system/update' && req.method === 'POST') {
         const body = await parseJsonBody(req);
         const targetVersion = body.version || 'v1.2.0';

@@ -109,7 +109,7 @@ async function runTests() {
   const verRes = await makeRequest({ host: '127.0.0.1', port: TEST_PORT, path: '/api/version', method: 'GET' });
   assert.strictEqual(verRes.status, 200);
   assert.strictEqual(verRes.body.success, true);
-  assert.strictEqual(verRes.body.version, '1.1.0');
+  assert.strictEqual(verRes.body.version, '1.2.0');
 
   // 注册
   const testUser = 'zspace_tester';
@@ -123,6 +123,7 @@ async function runTests() {
   );
   assert.strictEqual(regRes.status, 200, '注册应当成功返回 200');
   assert.strictEqual(regRes.body.success, true);
+  assert.ok(regRes.body.token, '注册应返回可跨远程地址使用的 Bearer Token');
   const registrationCookie = regRes.headers['set-cookie']?.[0]?.split(';')[0];
   assert.ok(registrationCookie, '注册应下发 HttpOnly Session Cookie');
 
@@ -197,12 +198,45 @@ async function runTests() {
     {
       vaultMeta: mockVaultMeta,
       encryptedItems: mockEncryptedItems,
-      deviceName: 'Test-Node-Runner'
+      deviceName: 'Test-Node-Runner',
+      clientVersion: 1
     }
   );
   assert.strictEqual(pushRes.status, 200);
   assert.strictEqual(pushRes.body.success, true);
   assert.strictEqual(pushRes.body.itemsCount, 2);
+
+  // 第二次推送前会自动生成 v2 历史快照；版本锁允许基于 v2 的设备更新。
+  const updatedMockItems = [
+    ...mockEncryptedItems,
+    { id: 'item-003', ciphertext: 'ENCRYPTED_PAYLOAD_3==', iv: 'IV_3==', updatedAt: new Date().toISOString() }
+  ];
+  const secondPush = await makeRequest(
+    {
+      host: '127.0.0.1',
+      port: TEST_PORT,
+      path: '/api/sync/push',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: tokenCookie }
+    },
+    { vaultMeta: mockVaultMeta, encryptedItems: updatedMockItems, deviceName: 'Second-Device', clientVersion: 2 }
+  );
+  assert.strictEqual(secondPush.status, 200);
+  assert.strictEqual(secondPush.body.version, 3);
+
+  // 旧设备基于 v2 的覆盖请求必须被拒绝，避免误操作抹掉新数据。
+  const stalePush = await makeRequest(
+    {
+      host: '127.0.0.1',
+      port: TEST_PORT,
+      path: '/api/sync/push',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: tokenCookie }
+    },
+    { vaultMeta: mockVaultMeta, encryptedItems: mockEncryptedItems, deviceName: 'Stale-Device', clientVersion: 2 }
+  );
+  assert.strictEqual(stalePush.status, 409);
+  assert.strictEqual(stalePush.body.code, 'VERSION_CONFLICT');
 
   // 状态 Status
   const statusRes = await makeRequest({
@@ -213,8 +247,35 @@ async function runTests() {
     headers: { Cookie: tokenCookie }
   });
   assert.strictEqual(statusRes.status, 200);
-  assert.strictEqual(statusRes.body.itemsCount, 2);
+  assert.strictEqual(statusRes.body.itemsCount, 3);
   assert.strictEqual(statusRes.body.hasData, true);
+  assert.strictEqual(statusRes.body.version, 3);
+  assert.strictEqual(statusRes.body.backupCount, 1);
+
+  // 历史快照列表与回滚：回滚前再保护当前 v3，回滚后生成新版本 v4。
+  const backupsRes = await makeRequest({
+    host: '127.0.0.1',
+    port: TEST_PORT,
+    path: '/api/sync/backups',
+    method: 'GET',
+    headers: { Cookie: tokenCookie }
+  });
+  assert.strictEqual(backupsRes.status, 200);
+  assert.strictEqual(backupsRes.body.backups.length, 1);
+  assert.strictEqual(backupsRes.body.backups[0].version, 2);
+
+  const rollbackRes = await makeRequest(
+    {
+      host: '127.0.0.1',
+      port: TEST_PORT,
+      path: '/api/sync/rollback',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: tokenCookie }
+    },
+    { snapshotId: backupsRes.body.backups[0].id, expectedVersion: 3, deviceName: 'Test-Node-Runner' }
+  );
+  assert.strictEqual(rollbackRes.status, 200);
+  assert.strictEqual(rollbackRes.body.version, 4);
 
   // 拉取 Pull
   const pullRes = await makeRequest({
@@ -227,6 +288,7 @@ async function runTests() {
   assert.strictEqual(pullRes.status, 200);
   assert.strictEqual(pullRes.body.success, true);
   assert.strictEqual(pullRes.body.vaultMeta.testCipher, 'CIPHER_TEST_TOKEN==');
+  assert.strictEqual(pullRes.body.version, 4);
   assert.strictEqual(pullRes.body.encryptedItems.length, 2);
   assert.strictEqual(pullRes.body.encryptedItems[0].ciphertext, 'ENCRYPTED_PAYLOAD_1==');
 
@@ -241,8 +303,7 @@ async function runTests() {
 
   // 清理临时测试数据
   try {
-    if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
-    if (fs.existsSync(TEST_DATA_DIR)) fs.rmdirSync(TEST_DATA_DIR);
+    if (fs.existsSync(TEST_DATA_DIR)) fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true });
   } catch {}
 
   console.log('  ✓ 加密金库推送、状态查询、拉取与权限防越权校验 100% 通过！');

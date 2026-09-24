@@ -14,7 +14,9 @@ import {
   Monitor,
   ExternalLink,
   LogOut,
-  Edit3
+  Edit3,
+  History,
+  RotateCcw
 } from 'lucide-react';
 import {
   NasSyncConfig,
@@ -26,6 +28,9 @@ import {
   pushVaultToNas,
   pullVaultFromNas,
   getNasSyncStatus,
+  getNasBackups,
+  rollbackNasBackup,
+  NasBackupSummary,
   mergeVaultItems,
   getDeviceIdentifier,
   normalizeServerUrl
@@ -69,6 +74,10 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [healthStatus, setHealthStatus] = useState<string | null>(null);
+  const [backups, setBackups] = useState<NasBackupSummary[]>([]);
+  const [currentRemoteVersion, setCurrentRemoteVersion] = useState<number | null>(null);
+  const [isLoadingBackups, setIsLoadingBackups] = useState(false);
+  const [isRollingBack, setIsRollingBack] = useState(false);
 
   // 动态修改/切换 NAS 网址状态 (应对极空间远程域名变动)
   const [isEditingUrl, setIsEditingUrl] = useState(false);
@@ -97,14 +106,32 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
     addToast('success', `极空间同步网址已成功更新为：${cleanUrl}`);
   };
 
+  const refreshBackups = async (config: NasSyncConfig | null = syncConfig) => {
+    if (!config?.token) return;
+    setIsLoadingBackups(true);
+    const result = await getNasBackups(config.serverUrl, config.token);
+    setIsLoadingBackups(false);
+    if (result.success) {
+      setBackups(result.backups || []);
+      if (typeof result.currentVersion === 'number') {
+        setCurrentRemoteVersion(result.currentVersion);
+        const updatedConfig = { ...config, remoteVersion: result.currentVersion };
+        saveNasSyncConfig(updatedConfig);
+        setSyncConfig(updatedConfig);
+      }
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       const cfg = loadNasSyncConfig();
       setSyncConfig(cfg);
       if (cfg) {
-        setServerUrl(cfg.serverUrl);
+        setServerUrl(cfg.serverUrl || window.location.origin);
         setUsername(cfg.username);
         setIsAutoSync(cfg.autoSync);
+        setCurrentRemoteVersion(cfg.remoteVersion ?? null);
+        void refreshBackups(cfg);
       } else {
         // 若当前处于 NAS 容器托管的网页下，自动预填当前 origin
         if (window.location.port === '8088' || window.location.pathname.startsWith('/')) {
@@ -164,12 +191,15 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
             token: res.token || '',
             salt: res.salt,
             lastSyncTime: null,
-            autoSync: isAutoSync
+            autoSync: isAutoSync,
+            remoteVersion: res.version
           };
           saveNasSyncConfig(newCfg);
           setSyncConfig(newCfg);
           addToast('success', '极空间账号注册并绑定成功！');
           onSyncStatusChanged?.(true, null);
+          setCurrentRemoteVersion(res.version ?? null);
+          void refreshBackups(newCfg);
         } else {
           if (res.message && (res.message.includes('已存在') || res.message.includes('409'))) {
             addToast('info', '💡 该账号在极空间中已存在，已自动为您切换至【登录】模式！');
@@ -187,12 +217,15 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
             token: res.token || '',
             salt: res.salt,
             lastSyncTime: null,
-            autoSync: isAutoSync
+            autoSync: isAutoSync,
+            remoteVersion: res.version
           };
           saveNasSyncConfig(newCfg);
           setSyncConfig(newCfg);
           addToast('success', '极空间账号登录成功，已联机！');
           onSyncStatusChanged?.(true, null);
+          setCurrentRemoteVersion(res.version ?? null);
+          void refreshBackups(newCfg);
         } else {
           addToast('error', res.message || '登录失败，请检查账号或密码');
         }
@@ -242,7 +275,8 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
         syncConfig.token,
         effectiveMeta,
         mergedEncrypted,
-        getDeviceIdentifier()
+        getDeviceIdentifier(),
+        pullRes.version
       );
 
       if (pushRes.success) {
@@ -251,10 +285,16 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
         saveStoredEncryptedItems(mergedEncrypted);
         onVaultUpdatedFromRemote(effectiveMeta, mergedItems);
 
-        const updatedCfg = { ...syncConfig, lastSyncTime: pushRes.updatedAt || new Date().toISOString() };
+        const updatedCfg = {
+          ...syncConfig,
+          lastSyncTime: pushRes.updatedAt || new Date().toISOString(),
+          remoteVersion: pushRes.version
+        };
         saveNasSyncConfig(updatedCfg);
         setSyncConfig(updatedCfg);
         onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
+        setCurrentRemoteVersion(pushRes.version ?? null);
+        void refreshBackups(updatedCfg);
 
         addToast(
           'success',
@@ -277,9 +317,11 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
       return;
     }
 
-    // 防误覆盖安全预检：先获取极空间云端凭据数量
+    // 防误覆盖安全预检：先获取极空间云端凭据数量，并锁定本次推送基线版本
+    let expectedVersion: number | undefined;
     try {
       const status = await getNasSyncStatus(syncConfig.serverUrl, syncConfig.token);
+      expectedVersion = status.version;
       if (status.success && status.hasData && typeof status.itemsCount === 'number') {
         if (items.length < status.itemsCount) {
           const diff = status.itemsCount - items.length;
@@ -315,14 +357,21 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
         syncConfig.token,
         vaultMeta,
         encryptedItems,
-        getDeviceIdentifier()
+        getDeviceIdentifier(),
+        expectedVersion
       );
 
       if (res.success) {
-        const updatedCfg = { ...syncConfig, lastSyncTime: res.updatedAt || new Date().toISOString() };
+        const updatedCfg = {
+          ...syncConfig,
+          lastSyncTime: res.updatedAt || new Date().toISOString(),
+          remoteVersion: res.version
+        };
         saveNasSyncConfig(updatedCfg);
         setSyncConfig(updatedCfg);
         onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
+        setCurrentRemoteVersion(res.version ?? null);
+        void refreshBackups(updatedCfg);
         addToast('success', `全库凭据 (${encryptedItems.length}项) 已成功安全推送至极空间 NAS！`);
       } else {
         addToast('error', res.message || '推送失败');
@@ -352,10 +401,16 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
         saveStoredEncryptedItems(res.encryptedItems);
         onVaultUpdatedFromRemote(res.vaultMeta, decryptedItems);
 
-        const updatedCfg = { ...syncConfig, lastSyncTime: res.updatedAt || new Date().toISOString() };
+        const updatedCfg = {
+          ...syncConfig,
+          lastSyncTime: res.updatedAt || new Date().toISOString(),
+          remoteVersion: res.version
+        };
         saveNasSyncConfig(updatedCfg);
         setSyncConfig(updatedCfg);
         onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
+        setCurrentRemoteVersion(res.version ?? null);
+        void refreshBackups(updatedCfg);
 
         addToast('success', `已成功从极空间拉取并还原 ${decryptedItems.length} 条加密凭据！`);
       } else {
@@ -365,6 +420,64 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
       addToast('error', err instanceof Error ? err.message : '拉取解密失败，可能是云端主密码与本地不一致');
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleRollback = async (backup: NasBackupSummary) => {
+    if (!syncConfig || !masterKey) {
+      addToast('error', '未连接极空间或未解锁金库，无法回滚');
+      return;
+    }
+    const confirmed = window.confirm(
+      `确定要将极空间云端数据回滚到 v${backup.version} 吗？\n\n` +
+      `该操作不会删除当前版本：回滚前会自动再备份当前版本，之后其他设备重新登录/同步即可获得回滚后的数据。`
+    );
+    if (!confirmed) return;
+
+    setIsRollingBack(true);
+    try {
+      const status = await getNasSyncStatus(syncConfig.serverUrl, syncConfig.token);
+      if (!status.success || typeof status.version !== 'number') {
+        addToast('error', status.message || '无法确认当前云端版本，已取消回滚');
+        return;
+      }
+      const result = await rollbackNasBackup(
+        syncConfig.serverUrl,
+        syncConfig.token,
+        backup.id,
+        status.version,
+        getDeviceIdentifier()
+      );
+      if (!result.success) {
+        addToast('error', result.message || '历史版本回滚失败');
+        return;
+      }
+
+      const pullRes = await pullVaultFromNas(syncConfig.serverUrl, syncConfig.token);
+      if (!pullRes.success || !pullRes.vaultMeta || !pullRes.encryptedItems) {
+        addToast('error', pullRes.message || '回滚成功，但拉取回滚后的数据失败，请稍后重试');
+        return;
+      }
+      const decryptedItems = await decryptAllVaultItems(masterKey, pullRes.encryptedItems);
+      saveStoredVaultMeta(pullRes.vaultMeta);
+      saveStoredEncryptedItems(pullRes.encryptedItems);
+      onVaultUpdatedFromRemote(pullRes.vaultMeta, decryptedItems);
+
+      const updatedCfg = {
+        ...syncConfig,
+        lastSyncTime: pullRes.updatedAt || new Date().toISOString(),
+        remoteVersion: pullRes.version
+      };
+      saveNasSyncConfig(updatedCfg);
+      setSyncConfig(updatedCfg);
+      setCurrentRemoteVersion(pullRes.version ?? null);
+      onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
+      await refreshBackups(updatedCfg);
+      addToast('success', `已回滚到 v${backup.version}，当前版本为 v${pullRes.version}`);
+    } catch (err: unknown) {
+      addToast('error', err instanceof Error ? err.message : '历史版本回滚异常');
+    } finally {
+      setIsRollingBack(false);
     }
   };
 
@@ -524,7 +637,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            setEditUrlInput(syncConfig.serverUrl);
+                            setEditUrlInput(syncConfig.serverUrl || window.location.origin);
                             setIsEditingUrl(true);
                           }}
                           className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 hover:underline"
@@ -534,7 +647,9 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                           <span>更换网址 (应对域名变动)</span>
                         </button>
                       </div>
-                      <span className="text-slate-200 truncate block text-xs">{syncConfig.serverUrl}</span>
+                      <span className="text-slate-200 truncate block text-xs">
+                        {syncConfig.serverUrl || `${window.location.origin}（跟随当前极空间访问地址）`}
+                      </span>
                     </div>
                   )}
 
@@ -601,6 +716,58 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                     <span>单向拉取 (Pull)</span>
                   </button>
                 </div>
+              </div>
+
+              {/* 云端历史版本：每次覆盖或回滚前都会先生成快照 */}
+              <div className="p-3 bg-slate-900/60 border border-slate-700/60 rounded-lg space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-slate-100 font-bold text-xs">
+                    <History className="w-3.5 h-3.5 text-amber-400" />
+                    <span>云端历史备份 / 可回滚</span>
+                    <span className="text-[10px] text-slate-500 font-normal">
+                      当前 v{currentRemoteVersion ?? '—'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void refreshBackups()}
+                    disabled={isLoadingBackups || isRollingBack}
+                    className="text-[10px] text-sky-400 hover:text-sky-300 disabled:opacity-50 flex items-center gap-1"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isLoadingBackups ? 'animate-spin' : ''}`} />
+                    <span>刷新</span>
+                  </button>
+                </div>
+                {backups.length === 0 ? (
+                  <p className="text-[10px] text-slate-500">暂无历史版本。首次成功推送后，后续覆盖会自动生成备份。</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto scrollbar-none">
+                    {backups.slice(0, 8).map((backup) => (
+                      <div key={backup.id} className="flex items-center justify-between gap-2 px-2.5 py-2 bg-slate-800/80 border border-slate-700/50 rounded">
+                        <div className="min-w-0">
+                          <div className="text-[11px] text-slate-200 font-mono">
+                            v{backup.version} · {backup.itemsCount} 项
+                          </div>
+                          <div className="text-[10px] text-slate-500 truncate">
+                            {backup.updatedAt ? new Date(backup.updatedAt).toLocaleString('zh-CN') : '未知时间'} · {backup.deviceName}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void handleRollback(backup)}
+                          disabled={isSyncing || isRollingBack}
+                          className="shrink-0 px-2 py-1 text-[10px] text-amber-300 border border-amber-700/60 hover:bg-amber-950/50 disabled:opacity-50 rounded flex items-center gap-1"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>回滚</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[10px] leading-relaxed text-slate-500">
+                  回滚前会再次备份当前版本；旧设备推送时若版本过期会被拒绝，不会覆盖新数据。
+                </p>
               </div>
 
               <div className="flex items-center justify-between pt-2.5 border-t border-slate-800">
