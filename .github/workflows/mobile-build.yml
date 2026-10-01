@@ -39,6 +39,13 @@ jobs:
         with:
           name: Android-Gradle-Log-${{ github.run_id }}
           path: gradle-build.log
+      - if: failure()
+        run: |
+          message="$(tail -c 5000 gradle-build.log)"
+          message="${message//'%'/'%25'}"
+          message="${message//$'\n'/'%0A'}"
+          message="${message//$'\r'/'%0D'}"
+          echo "::error title=Android Gradle build failed::$message"
       - uses: actions/upload-artifact@v4
         with:
           name: SafeVault-Android-${{ github.ref_name }}
