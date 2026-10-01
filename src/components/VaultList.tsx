@@ -626,7 +626,7 @@ export const VaultList: React.FC<VaultListProps> = ({
             className="absolute inset-0 bg-slate-950/40"
             onClick={() => setIsDefenseOpen(false)}
           />
-          <div className="relative h-full w-52 xl:w-60 max-w-[85vw] bg-white shadow-2xl">
+          <div className="relative h-full w-80 max-w-[92vw] bg-white shadow-2xl overflow-hidden flex flex-col">
             <div className="h-12 px-4 border-b border-slate-200 flex items-center justify-between">
               <span className="text-xs font-bold text-slate-700">安全审计与防御中枢</span>
               <div className="flex items-center gap-1">
@@ -652,7 +652,7 @@ export const VaultList: React.FC<VaultListProps> = ({
                 </button>
               </div>
             </div>
-            <div className="h-[calc(100%-3rem)] overflow-y-auto">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
               <TacticalDefensePanel
                 weakCount={audit.weakCount}
                 reusedCount={audit.reusedCount}

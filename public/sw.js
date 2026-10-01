@@ -1,5 +1,5 @@
 // SafeVault 离线运行 Service Worker
-const CACHE_NAME = 'safevault-cache-v1.1.0';
+const CACHE_NAME = 'safevault-cache-v1.2.4';
 const OFFLINE_URLS = [
   './',
   './index.html',

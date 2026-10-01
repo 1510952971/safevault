@@ -1,5 +1,6 @@
 import React from 'react';
 import { Clock, Cpu, AlertTriangle, ShieldCheck, CopyCheck, KeyRound, Key, FileText, EyeOff, Pin, PinOff, ChevronRight } from 'lucide-react';
+import { CURRENT_APP_VERSION } from '../utils/updateChecker';
 
 interface TacticalDefensePanelProps {
   weakCount: number;
@@ -57,7 +58,7 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
   };
 
   return (
-    <aside className={`${isPinned ? 'w-72 xl:w-80' : 'w-full lg:w-72 xl:w-80'} shrink-0 bg-white border-t lg:border-t-0 lg:border-l border-slate-200 lg:h-full flex flex-col justify-between overflow-y-auto p-4 xl:p-5 select-none z-10 scrollbar-none shadow-sm lg:shadow-none`}>
+    <aside className={`${isPinned ? 'w-72 xl:w-80' : 'w-full'} min-w-0 shrink-0 bg-white border-t lg:border-t-0 lg:border-l border-slate-200 h-full flex flex-col justify-between overflow-y-auto overflow-x-hidden p-4 xl:p-5 select-none z-10 scrollbar-thin shadow-sm lg:shadow-none`}>
       <div className="space-y-4">
         {/* 面板标题 */}
         <div className="border-l-4 border-brand-lime pl-2.5 pb-1 flex items-center justify-between">
@@ -313,7 +314,7 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
               <div className="flex-1 px-3 text-left">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-900 group-hover:text-slate-950 block">
-                    极空间 NAS 多端同步
+                    极空间数据与历史
                   </span>
                   {isNasConnected && (
                     <span className="text-[9px] font-mono text-emerald-600 bg-emerald-50 px-1 rounded font-bold border border-emerald-200">
@@ -339,7 +340,7 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
                 <span className="text-xs font-bold text-slate-900 group-hover:text-slate-950 block">
                   检查 GitHub 新版本
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono block">CHECK RELEASES // v1.1.0</span>
+                <span className="text-[10px] text-slate-400 font-mono block">CHECK RELEASES // {CURRENT_APP_VERSION}</span>
               </div>
             </button>
           )}
@@ -352,7 +353,7 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
           “ 以算法与秩序，筑牢私密资产的安全中枢。 ”
         </p>
         <span className="text-[9px] font-mono text-slate-300 block mt-1 tracking-wider">
-          SAFEVAULT TACTICAL OS v1.1 // MULTI-PLATFORM
+          SAFEVAULT {CURRENT_APP_VERSION} // MULTI-PLATFORM
         </span>
       </div>
     </aside>

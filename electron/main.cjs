@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, Menu } = require('electron');
+const { app, BrowserWindow, shell, Menu, session } = require('electron');
 const path = require('path');
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -58,7 +58,13 @@ if (!hasSingleInstanceLock) {
     });
   }
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    // 系统代理/VPN 的 TUN 模式可能错误接管 NAS 私网流量。桌面端继续使用
+    // 系统代理访问公网，但局域网与回环地址始终直连，避免登录请求 Failed to fetch。
+    await session.defaultSession.setProxy({
+      mode: 'system',
+      proxyBypassRules: '<local>;localhost;127.0.0.1;192.168.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*'
+    });
     createWindow();
 
     app.on('activate', () => {

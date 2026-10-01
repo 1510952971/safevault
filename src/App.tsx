@@ -41,11 +41,11 @@ import {
   logoutNasAccount,
   updateNasAuthHash,
   getNasSyncStatus,
-  mergeVaultItems,
   NasSyncConfig
 } from './utils/sync';
 import { PrivacyShield } from './components/PrivacyShield';
 import { Toast } from './components/Toast';
+import { checkForGitHubUpdate } from './utils/updateChecker';
 
 export const App: React.FC = () => {
   // 金库核心状态
@@ -78,6 +78,7 @@ export const App: React.FC = () => {
   // 极空间 NAS 配置与账号登录状态
   const [nasConfig, setNasConfig] = useState<NasSyncConfig | null>(() => loadNasSyncConfig());
   const [currentAccount, setCurrentAccount] = useState<string | null>(() => loadNasSyncConfig()?.username || null);
+  const nasTransferInFlightRef = useRef(false);
 
   // 二级密码鉴权状态
   const [secondaryAuthExpiry, setSecondaryAuthExpiry] = useState<number | null>(null);
@@ -122,16 +123,28 @@ export const App: React.FC = () => {
     if (cfg?.username) {
       setCurrentAccount(cfg.username);
       setNasConfig(cfg);
-    } else if (storedMeta) {
-      setCurrentAccount('本地金库');
     }
-    if (storedMeta) {
+    // 未登录 NAS 账号时不开放本地缓存解锁；本地缓存仅作为登录后的加密离线缓存。
+    if (storedMeta && cfg?.username) {
       setVaultMeta(storedMeta);
       setIsLocked(true);
     } else {
       setVaultMeta(null);
       setIsLocked(true);
     }
+  }, []);
+
+  // 程序启动后的首要联网动作：核对 GitHub 主分支版本，不一致时主动弹出更新提示。
+  useEffect(() => {
+    let cancelled = false;
+    void checkForGitHubUpdate().then((result) => {
+      if (!cancelled && result.success && result.versionMismatch) {
+        setIsUpdateModalOpen(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 锁屏实时倒计时秒数
@@ -279,6 +292,7 @@ export const App: React.FC = () => {
       }
 
       let effectiveMeta: VaultMeta;
+      let authoritativeVersion = pullRes.version ?? loginRes.version;
       let decryptedList: DecryptedVaultItem[] = [];
       let derivedKey: CryptoKey;
 
@@ -295,33 +309,18 @@ export const App: React.FC = () => {
         const encryptedItems = pullRes.encryptedItems || [];
         decryptedList = await decryptAllVaultItems(derivedKey, encryptedItems);
       } else {
-        // 该账号在云端为空，检查本地是否有已有数据可迁移
-        const existingStoredMeta = loadStoredVaultMeta();
-        const existingEncryptedItems = loadStoredEncryptedItems();
-        if (existingStoredMeta && existingEncryptedItems.length > 0) {
-          const verifyRes = await verifyMasterPassword(masterPassword, existingStoredMeta);
-          if (verifyRes.success && verifyRes.masterKey) {
-            effectiveMeta = existingStoredMeta;
-            derivedKey = verifyRes.masterKey;
-            decryptedList = await decryptAllVaultItems(derivedKey, existingEncryptedItems);
-          } else {
-            const initRes = await initializeVaultMeta(masterPassword);
-            effectiveMeta = initRes.meta;
-            derivedKey = initRes.masterKey;
-            decryptedList = [];
-          }
-        } else {
-          const initRes = await initializeVaultMeta(masterPassword);
-          effectiveMeta = initRes.meta;
-          derivedKey = initRes.masterKey;
-          decryptedList = [];
-        }
+        // NAS 是唯一权威数据源。新账号在 NAS 上为空时只创建空库，
+        // 不自动读取或迁移当前设备的本地离线库，避免把旧设备数据覆盖到错误账号。
+        const initRes = await initializeVaultMeta(masterPassword);
+        effectiveMeta = initRes.meta;
+        derivedKey = initRes.masterKey;
+        decryptedList = [];
 
-        const encList = [];
-        for (const it of decryptedList) {
-          encList.push(await encryptVaultItem(derivedKey, it, it.id));
+        const pushRes = await pushVaultToNas(cleanUrl, sessionToken, effectiveMeta, [], getDeviceIdentifier(), pullRes.version);
+        if (!pushRes.success) {
+          throw new Error(pushRes.message || '无法在极空间创建新的空密码库');
         }
-        await pushVaultToNas(cleanUrl, sessionToken, effectiveMeta, encList, getDeviceIdentifier(), pullRes.version);
+        authoritativeVersion = pushRes.version ?? authoritativeVersion;
       }
 
       // 3. 持久化到本地存储
@@ -339,7 +338,7 @@ export const App: React.FC = () => {
         salt: loginRes.salt,
         lastSyncTime: pullRes.updatedAt || new Date().toISOString(),
         autoSync: true,
-        remoteVersion: pullRes.version ?? loginRes.version
+        remoteVersion: authoritativeVersion
       };
       saveNasSyncConfig(newCfg);
       setNasConfig(newCfg);
@@ -361,7 +360,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // 3.2 账号登录制：注册新账号并初始化专属云端数据库 (平滑迁移本地已有数据)
+  // 3.2 账号登录制：注册新账号并初始化专属云端数据库
   const handleRegister = async (
     username: string,
     masterPassword: string,
@@ -380,31 +379,14 @@ export const App: React.FC = () => {
         return { success: false, message: msg };
       }
 
-      // 检查当前设备本地是否已有旧数据（平滑迁移，绝不丢数据）
-      const existingStoredMeta = loadStoredVaultMeta();
-      const existingEncryptedItems = loadStoredEncryptedItems();
+      // 新账号以极空间为唯一数据源，从空库开始；本地旧缓存不自动迁移。
       let metaToUse: VaultMeta;
       let masterKeyToUse: CryptoKey;
       let initialItems: DecryptedVaultItem[] = [];
       let initialEncrypted: EncryptedVaultItem[] = [];
-
-      if (existingStoredMeta && existingEncryptedItems.length > 0) {
-        const verifyRes = await verifyMasterPassword(masterPassword, existingStoredMeta);
-        if (verifyRes.success && verifyRes.masterKey) {
-          metaToUse = existingStoredMeta;
-          masterKeyToUse = verifyRes.masterKey;
-          initialItems = await decryptAllVaultItems(masterKeyToUse, existingEncryptedItems);
-          initialEncrypted = existingEncryptedItems;
-        } else {
-          const initRes = await initializeVaultMeta(masterPassword);
-          metaToUse = initRes.meta;
-          masterKeyToUse = initRes.masterKey;
-        }
-      } else {
-        const initRes = await initializeVaultMeta(masterPassword);
-        metaToUse = initRes.meta;
-        masterKeyToUse = initRes.masterKey;
-      }
+      const initRes = await initializeVaultMeta(masterPassword);
+      metaToUse = initRes.meta;
+      masterKeyToUse = initRes.masterKey;
 
       // 3. 推送初始元数据上云开户
       const sessionToken = regRes.token || '';
@@ -474,6 +456,12 @@ export const App: React.FC = () => {
   const autoPushToNas = useCallback(async (meta: VaultMeta, currentItems: DecryptedVaultItem[], key: CryptoKey): Promise<boolean> => {
     const cfg = loadNasSyncConfig();
     if (!cfg?.token) return false;
+    // 写操作优先：若恰逢后台版本检查，等待其结束，不能静默丢弃本次上传。
+    for (let attempt = 0; nasTransferInFlightRef.current && attempt < 50; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+    }
+    if (nasTransferInFlightRef.current) return false;
+    nasTransferInFlightRef.current = true;
     try {
       const status = await getNasSyncStatus(cfg.serverUrl, cfg.token);
       if (!status.success || typeof status.version !== 'number') return false;
@@ -496,19 +484,68 @@ export const App: React.FC = () => {
     } catch (e) {
       console.warn('[AutoSync] 自动静默同步至极空间后台异常:', e);
       return false;
+    } finally {
+      nasTransferInFlightRef.current = false;
     }
   }, []);
 
-  // 3.5 离线单机主密码初始化 (备选)
+  // 3.5 已解锁客户端持续跟随 NAS 权威版本：前台每 10 秒检查，窗口聚焦时立即检查。
+  const refreshFromNasIfChanged = useCallback(async () => {
+    if (isLocked || !masterKey || nasTransferInFlightRef.current) return;
+    const cfg = loadNasSyncConfig();
+    if (!cfg?.token) return;
+
+    nasTransferInFlightRef.current = true;
+    try {
+      const status = await getNasSyncStatus(cfg.serverUrl, cfg.token);
+      if (!status.success || typeof status.version !== 'number' || status.version === cfg.remoteVersion) return;
+
+      const pullRes = await pullVaultFromNas(cfg.serverUrl, cfg.token);
+      if (!pullRes.success || !pullRes.vaultMeta || !pullRes.encryptedItems) return;
+
+      const remoteItems = await decryptAllVaultItems(masterKey, pullRes.encryptedItems);
+      saveStoredVaultMeta(pullRes.vaultMeta);
+      saveStoredEncryptedItems(pullRes.encryptedItems);
+      setVaultMeta(pullRes.vaultMeta);
+      setItems(remoteItems);
+
+      const updatedCfg: NasSyncConfig = {
+        ...cfg,
+        lastSyncTime: pullRes.updatedAt || new Date().toISOString(),
+        remoteVersion: pullRes.version ?? status.version
+      };
+      saveNasSyncConfig(updatedCfg);
+      setNasConfig(updatedCfg);
+      addToast('info', `已自动获取其他客户端的更新，当前共 ${remoteItems.length} 项`);
+    } catch (error) {
+      console.warn('[LiveSync] 获取其他客户端更新失败:', error);
+    } finally {
+      nasTransferInFlightRef.current = false;
+    }
+  }, [isLocked, masterKey]);
+
+  useEffect(() => {
+    if (isLocked || !masterKey || !nasConfig?.token) return;
+
+    const refreshWhenActive = () => {
+      if (!document.hidden) void refreshFromNasIfChanged();
+    };
+    const intervalId = window.setInterval(refreshWhenActive, 10_000);
+    window.addEventListener('focus', refreshWhenActive);
+    document.addEventListener('visibilitychange', refreshWhenActive);
+    void refreshFromNasIfChanged();
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshWhenActive);
+      document.removeEventListener('visibilitychange', refreshWhenActive);
+    };
+  }, [isLocked, masterKey, nasConfig?.token, refreshFromNasIfChanged]);
+
+  // 3.6 兼容旧调用：新版本不再提供离线单机初始化。
   const handleInitialize = async (masterPassword: string) => {
-    const { meta, masterKey: newKey } = await initializeVaultMeta(masterPassword);
-    saveStoredVaultMeta(meta);
-    setVaultMeta(meta);
-    setMasterKey(newKey);
-    setItems([]);
-    setCurrentAccount('离线单机库');
-    setIsLocked(false);
-    addToast('success', '密码数据库离线单机模式初始化完成！');
+    void masterPassword;
+    addToast('warning', '请先登录或注册极空间同步账号，数据将统一保存在极空间 NAS');
   };
 
   // 4. 输入主密码解锁
@@ -527,7 +564,7 @@ export const App: React.FC = () => {
         setItems(decryptedList);
         addToast('success', '密码数据库解锁成功');
 
-        // 解锁后后台自动与极空间云端比对最新版本（多端无感双向对齐）
+        // 解锁后以极空间为唯一权威源刷新本地加密缓存，不把本地独有数据反向推送。
         const cfg = loadNasSyncConfig();
         if (cfg?.token) {
           (async () => {
@@ -535,33 +572,15 @@ export const App: React.FC = () => {
               const pullRes = await pullVaultFromNas(cfg.serverUrl, cfg.token);
               if (pullRes.success && pullRes.encryptedItems) {
                 const remoteDecrypted = await decryptAllVaultItems(result.masterKey!, pullRes.encryptedItems);
-                const { mergedItems, addedFromRemote, updatedFromRemote, retainedLocalOnly } = mergeVaultItems(
-                  decryptedList,
-                  remoteDecrypted
-                );
-                if (addedFromRemote > 0 || updatedFromRemote > 0) {
-                  const reEncrypted = [];
-                  for (const it of mergedItems) {
-                    reEncrypted.push(await encryptVaultItem(result.masterKey!, it, it.id));
-                  }
-                  saveStoredEncryptedItems(reEncrypted);
-                  setItems(mergedItems);
-                  addToast('info', `已同步极空间最新数据 (+${addedFromRemote}条新增, ~${updatedFromRemote}条更新)`);
-                }
-                if (retainedLocalOnly > 0) {
-                  const fullEncrypted = [];
-                  for (const it of mergedItems) {
-                    fullEncrypted.push(await encryptVaultItem(result.masterKey!, it, it.id));
-                  }
-                  await pushVaultToNas(
-                    cfg.serverUrl,
-                    cfg.token,
-                    pullRes.vaultMeta || vaultMeta,
-                    fullEncrypted,
-                    getDeviceIdentifier(),
-                    pullRes.version
-                  );
-                }
+                const remoteEncrypted = pullRes.encryptedItems;
+                saveStoredEncryptedItems(remoteEncrypted);
+                if (pullRes.vaultMeta) saveStoredVaultMeta(pullRes.vaultMeta);
+                setItems(remoteDecrypted);
+                if (pullRes.vaultMeta) setVaultMeta(pullRes.vaultMeta);
+                const updatedCfg = { ...cfg, lastSyncTime: pullRes.updatedAt || new Date().toISOString(), remoteVersion: pullRes.version };
+                saveNasSyncConfig(updatedCfg);
+                setNasConfig(updatedCfg);
+                addToast('info', `已从极空间刷新 ${remoteDecrypted.length} 项数据`);
               }
             } catch (syncErr) {
               console.warn('[AutoSyncOnUnlock] 自动静默对齐异常:', syncErr);
@@ -1052,7 +1071,7 @@ export const App: React.FC = () => {
               onLogout={handleLogout}
               onOpenRestore={() => setIsBackupModalOpen(true)}
               onResetVault={handleResetVault}
-              onInitializeStandalone={handleInitialize}
+              onInitializeStandalone={undefined}
             />
           </div>
         ) : (

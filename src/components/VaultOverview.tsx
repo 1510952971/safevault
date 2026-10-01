@@ -32,14 +32,14 @@ export const VaultOverview: React.FC<VaultOverviewProps> = ({
       </div>
 
       {/* 小节标题 与 搜索栏 */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2 border-l-4 border-brand-lime pl-2.5">
           <h2 className="text-base font-bold text-slate-900 tracking-tight">保险库总览</h2>
           <span className="text-xs font-mono text-slate-400">// VAULT OVERVIEW</span>
         </div>
 
         {/* 快速搜索框 */}
-        <div className="relative w-48 sm:w-64">
+        <div className="relative w-full sm:w-64">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"

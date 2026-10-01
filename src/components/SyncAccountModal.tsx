@@ -509,7 +509,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
-                极空间 NAS 容器化多端同步中心
+                极空间 NAS 数据与历史管理
                 <span className="px-1.5 py-0.5 text-[10px] font-mono bg-emerald-950 text-emerald-400 border border-emerald-800 rounded">
                   ZERO-KNOWLEDGE
                 </span>
@@ -579,7 +579,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                 <div className="flex items-center justify-between pb-2 border-b border-slate-700/60">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="font-bold text-slate-100 text-sm">极空间联机同步就绪</span>
+                    <span className="font-bold text-slate-100 text-sm">极空间数据已联机</span>
                   </div>
                   <span className="font-mono text-[11px] text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
                     CONNECTED
@@ -673,7 +673,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                             minute: '2-digit',
                             second: '2-digit'
                           })
-                        : '待首次同步'}
+                        : '登录后自动获取'}
                     </span>
                   </div>
                 </div>
@@ -681,9 +681,11 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
 
               {/* 操作按钮组 */}
               <div className="space-y-2.5">
-                {/* 核心主推荐按钮：智能双向合并同步 */}
+                <div className="text-[11px] leading-relaxed text-slate-400 px-1">
+                  登录时会自动获取该账号的全部数据，新增、修改和删除也会自动写回 NAS，无需手动同步。
+                </div>
                 <button
-                  onClick={handleSmartSync}
+                  onClick={handlePullFromNas}
                   disabled={isSyncing}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg font-bold shadow-md transition-all text-xs"
                 >
@@ -692,7 +694,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                   ) : (
                     <RefreshCw className="w-4 h-4 text-emerald-100" />
                   )}
-                  <span>智能双向同步 (推荐 · 自动合并两端最新，防丢失)</span>
+                  <span>立即从 NAS 刷新数据</span>
                 </button>
 
                 <div className="grid grid-cols-2 gap-2.5">
@@ -703,7 +705,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                     title="将本地数据推送至极空间（若本地数据少于云端会自动拦截预警）"
                   >
                     <ArrowUpCircle className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>单向推送 (Push)</span>
+                    <span>恢复性上传</span>
                   </button>
 
                   <button
@@ -713,9 +715,17 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                     title="从极空间拉取数据并覆盖本地"
                   >
                     <ArrowDownCircle className="w-3.5 h-3.5 text-sky-400" />
-                    <span>单向拉取 (Pull)</span>
+                    <span>重新下载</span>
                   </button>
                 </div>
+                <button
+                  onClick={handleSmartSync}
+                  disabled={isSyncing}
+                  className="w-full px-3 py-2 text-[11px] text-amber-300 border border-amber-800/60 bg-amber-950/20 hover:bg-amber-950/40 rounded transition-colors"
+                  title="仅用于旧版独立本地库迁移或故障恢复，日常使用不需要"
+                >
+                  兼容旧数据合并（仅迁移 / 恢复）
+                </button>
               </div>
 
               {/* 云端历史版本：每次覆盖或回滚前都会先生成快照 */}

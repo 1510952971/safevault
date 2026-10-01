@@ -15,6 +15,7 @@ import {
   User
 } from 'lucide-react';
 import { SafeVaultLogo } from './SafeVaultLogo';
+import { CURRENT_APP_VERSION } from '../utils/updateChecker';
 
 interface HeaderProps {
   isLocked: boolean;
@@ -100,7 +101,7 @@ export const Header: React.FC<HeaderProps> = ({
               title="检查 GitHub 版本更新"
             >
               <GitBranch className="w-2.5 h-2.5 text-emerald-600" />
-              <span>v1.1.0</span>
+              <span>{CURRENT_APP_VERSION}</span>
             </button>
           )}
         </div>
@@ -148,7 +149,7 @@ export const Header: React.FC<HeaderProps> = ({
                     ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 shadow-xs'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
                 }`}
-                title={isNasConnected ? `当前账号: ${currentAccount || '已联机'} · 极空间同步在线 (最后同步: ${nasLastSyncTime ? new Date(nasLastSyncTime).toLocaleTimeString() : '刚刚'})` : '极空间 NAS 同步中心 (未连接)'}
+                title={isNasConnected ? `当前账号: ${currentAccount || '已联机'} · 极空间数据在线 (最后更新: ${nasLastSyncTime ? new Date(nasLastSyncTime).toLocaleTimeString() : '刚刚'})` : '极空间 NAS 数据与历史 (未连接)'}
               >
                 {isNasConnected ? (
                   <>
@@ -260,7 +261,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <GitBranch className="w-3.5 h-3.5 text-emerald-600" />
                       <div className="flex flex-col">
                         <span className="font-bold text-slate-800">检查 GitHub 版本更新</span>
-                        <span className="text-[10px] text-slate-400 font-mono">CHECK RELEASES // v1.1.0</span>
+                        <span className="text-[10px] text-slate-400 font-mono">CHECK RELEASES // {CURRENT_APP_VERSION}</span>
                       </div>
                     </button>
                   )}

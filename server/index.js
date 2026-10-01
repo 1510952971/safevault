@@ -25,7 +25,17 @@ const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, '..', 'dist');
 const REQUIRE_HTTPS = process.env.REQUIRE_HTTPS === 'true';
 const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:3000,null,file://').split(',').map((origin) => origin.trim()).filter(Boolean);
-let SERVER_VERSION = '1.2.3';
+const packageInfo = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+const SERVER_VERSION = packageInfo.version;
+
+function getFrontendVersion() {
+  try {
+    const buildInfo = JSON.parse(fs.readFileSync(path.join(STATIC_DIR, 'build-info.json'), 'utf8'));
+    return String(buildInfo.version || 'unknown');
+  } catch {
+    return 'unknown';
+  }
+}
 const MAX_SNAPSHOTS = 30;
 
 // 认证失败限流：按 IP 与账号分别计数，避免 authHash 被暴力重放。
@@ -399,6 +409,9 @@ const server = http.createServer(async (req, res) => {
           status: 'healthy',
           name: 'SafeVault NAS Sync Server',
           version: SERVER_VERSION,
+          serverVersion: SERVER_VERSION,
+          frontendVersion: getFrontendVersion(),
+          versionsMatch: getFrontendVersion() === SERVER_VERSION,
           userCount: Object.keys(db.users).length,
           timestamp: new Date().toISOString()
         });
@@ -669,19 +682,16 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      // 10. 极空间在线系统热更新 (In-App Hot Update)
+      // 10. 更新状态说明。容器内不允许自行替换运行代码，避免伪更新与数据损坏。
       if (pathname === '/api/system/update' && req.method === 'POST') {
         const body = await parseJsonBody(req);
-        const targetVersion = body.version || 'v1.2.3';
-        console.log(`[SafeVault Update] 正在执行系统在线热更新至 ${targetVersion}...`);
-
-        SERVER_VERSION = targetVersion.replace(/^v/i, '');
-
-        return sendJson(res, 200, {
-          success: true,
-          message: `系统核心已成功热更新至 ${targetVersion}！`,
-          newVersion: targetVersion,
-          timestamp: new Date().toISOString()
+        const targetVersion = body.version || `v${SERVER_VERSION}`;
+        return sendJson(res, 409, {
+          success: false,
+          code: 'DEPLOYMENT_UPDATE_REQUIRED',
+          currentVersion: SERVER_VERSION,
+          targetVersion,
+          message: '极空间版本更新必须覆盖最新 dist、server 与 package.json 后重启容器；data 目录保持原挂载，不会丢失账号和密文数据。'
         });
       }
 

@@ -1,8 +1,13 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
 title SafeVault - ZSpace Docker Image Builder
 
 cd /d "%~dp0"
+if errorlevel 1 (
+    echo [错误] 无法切换到项目目录：%~dp0
+    pause
+    exit /b 1
+)
 
 echo ========================================================
 echo   SafeVault 密码数据库 - 极空间 Docker 镜像导出工具
@@ -11,9 +16,17 @@ echo.
 echo 提示：此工具需要电脑已启动 Docker Desktop。
 echo 若未启动 Docker Desktop，建议使用 "生成极空间部署包.bat"（免电脑安装 Docker）。
 echo.
+where docker.exe >nul 2>&1
+if errorlevel 1 (
+    echo [错误] 这台电脑尚未安装 Docker Desktop，或 docker.exe 不在 PATH 中。
+    echo 请安装并启动 Docker Desktop，或改用 "生成极空间部署包.bat"。
+    pause
+    exit /b 1
+)
+
 echo 正在检查本地 Docker 运行状态...
 docker info >nul 2>&1
-if %errorlevel% neq 0 (
+if errorlevel 1 (
     echo [提示] 检测到 Docker Desktop 尚未启动或后台引擎未就绪。
     echo 请先启动 Docker Desktop，或使用 "生成极空间部署包.bat" 免本地 Docker 方案。
     pause
@@ -23,7 +36,7 @@ if %errorlevel% neq 0 (
 echo.
 echo [1/2] 正在构建 Docker 镜像 (safevault:latest)...
 docker build -t safevault:latest -f "%~dp0deploy\Dockerfile" "%~dp0"
-if %errorlevel% neq 0 (
+if errorlevel 1 (
     echo [ERROR] 镜像构建失败，请检查上方日志。
     pause
     exit /b 1
@@ -32,7 +45,7 @@ if %errorlevel% neq 0 (
 echo.
 echo [2/2] 正在导出镜像为极空间可直接导入的 tar 包 (safevault-zspace.tar)...
 docker save -o "%~dp0safevault-zspace.tar" safevault:latest
-if %errorlevel% neq 0 (
+if errorlevel 1 (
     echo [ERROR] 镜像导出失败。
     pause
     exit /b 1

@@ -1,13 +1,25 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
 title SafeVault - 桌面快捷方式创建器
+
+cd /d "%~dp0"
+if errorlevel 1 (
+    echo [错误] 无法切换到项目目录：%~dp0
+    pause
+    exit /b 1
+)
 
 echo ========================================================
 echo   SafeVault 密码数据库 - 创建 Windows 桌面应用快捷方式
 echo ========================================================
 echo.
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$WshShell = New-Object -ComObject WScript.Shell; $Desktop = [Environment]::GetFolderPath('Desktop'); $ProjectDir = [IO.Path]::GetFullPath('%~dp0'); $Batch = Join-Path $ProjectDir '启动桌面客户端.bat'; $Shortcut = $WshShell.CreateShortcut((Join-Path $Desktop 'SafeVault 密码数据库.lnk')); $Shortcut.TargetPath = 'cmd.exe'; $Shortcut.Arguments = '/c start \"\" \"' + $Batch + '\"'; $Shortcut.WorkingDirectory = $ProjectDir; $Shortcut.Description = 'SafeVault 个人私密密码数据库桌面客户端'; $Shortcut.Save(); Write-Host '[成功] 已在您的 Windows 桌面上生成「SafeVault 密码数据库」快捷方式！' -ForegroundColor Green"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$WshShell = New-Object -ComObject WScript.Shell; $Desktop = [Environment]::GetFolderPath('Desktop'); $ProjectDir = [IO.Path]::GetFullPath('%~dp0'); $Batch = Join-Path $ProjectDir '启动桌面客户端.bat'; $Shortcut = $WshShell.CreateShortcut((Join-Path $Desktop 'SafeVault 密码数据库.lnk')); $Shortcut.TargetPath = $Batch; $Shortcut.WorkingDirectory = $ProjectDir; $Shortcut.Description = 'SafeVault 个人私密密码数据库桌面客户端'; $Shortcut.Save(); Write-Host '[成功] 已在您的 Windows 桌面上生成「SafeVault 密码数据库」快捷方式！' -ForegroundColor Green"
+if errorlevel 1 (
+    echo [错误] 快捷方式创建失败，请查看上方信息。
+    pause
+    exit /b 1
+)
 
 echo.
 echo 您现在可以直接在电脑桌面上双击「SafeVault 密码数据库」图标打开桌面端应用！

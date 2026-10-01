@@ -4,7 +4,7 @@
  * 核心安全保障：
  * 1. 认证派生摘要（AuthHash）：基于主密码 + 用户专属盐值派生，主密码永远不发送至服务器；
  * 2. 密文传输：传输的全部为经过 AES-GCM 强加密后的密文载荷，极空间服务器无权也无能力解密；
- * 3. 离线优先：断网或脱机时使用本地存储，联机时一键双向安全同步。
+ * 3. NAS 权威：极空间保存账号的唯一密文金库；客户端只保留加密缓存，登录时拉取，写入时回传。
  */
 
 import { VaultMeta, EncryptedVaultItem, VaultItem } from '../types/vault';
@@ -203,7 +203,10 @@ export async function checkNasHealth(serverUrl: string): Promise<{
       userCount: data.userCount
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : '连接超时或网络不可达';
+    const rawMessage = err instanceof Error ? err.message : '连接超时或网络不可达';
+    const errorMsg = rawMessage === 'Failed to fetch'
+      ? '连接被系统代理或网络策略拦截；请确认 NAS 地址和端口，并将局域网地址设为直连'
+      : rawMessage;
     return { success: false, message: `无法连接到极空间 NAS (${errorMsg})` };
   }
 }
@@ -225,7 +228,13 @@ export async function getNasSalt(serverUrl: string, username: string): Promise<{
     }
     return { success: true, salt: data.salt };
   } catch (err: unknown) {
-    return { success: false, message: err instanceof Error ? err.message : '请求异常' };
+    const message = err instanceof Error ? err.message : '请求异常';
+    return {
+      success: false,
+      message: message === 'Failed to fetch'
+        ? '无法直连极空间 NAS；请检查端口映射，并在代理/VPN中开启“绕过局域网”'
+        : message
+    };
   }
 }
 
@@ -625,7 +634,7 @@ export async function pullVaultFromNas(
 }
 
 /**
- * 智能双向合并本地与云端密码凭据（Smart Two-Way Merge）
+ * 兼容旧数据的双向合并工具（不再用于默认同步流程）。
  * 核心安全规则：
  * 1. 绝不盲目覆盖或物理抹除：本地独有或云端独有的条目 100% 全部并入；
  * 2. 相同条目 (按 id 匹配)：以最后更新时间 (updatedAt) 较新者为准保留最新修改；

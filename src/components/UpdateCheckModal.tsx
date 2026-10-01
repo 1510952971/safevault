@@ -33,7 +33,7 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
   const [isChecking, setIsChecking] = useState(false);
   const [result, setResult] = useState<ReleaseCheckResult | null>(null);
 
-  // 一键在线更新状态
+  // 平台更新指引状态
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateStep, setUpdateStep] = useState(0);
   const [updateMessage, setUpdateMessage] = useState('');
@@ -53,27 +53,11 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
     setIsUpdating(true);
     setIsUpdateDone(false);
     setUpdateStep(1);
-    setUpdateMessage(`[1/3] 正在连接 GitHub 官方 Releases 并获取 ${targetVersion} 发布核心包...`);
-
-    await new Promise((r) => setTimeout(r, 900));
-    setUpdateStep(2);
-    setUpdateMessage(`[2/3] 校验 SHA-256 签名完整性，正在无损替换前端核心资源库...`);
-
-    await new Promise((r) => setTimeout(r, 900));
+    setUpdateMessage(`正在生成 ${targetVersion} 的平台更新指引...`);
+    const updateResult = await performSystemUpdate(targetVersion);
     setUpdateStep(3);
-    setUpdateMessage(`[3/3] 正在同步本地密码数据库环境并应用热更新...`);
-
-    try {
-      await performSystemUpdate(targetVersion);
-    } catch (_e) {}
-
-    await new Promise((r) => setTimeout(r, 600));
     setIsUpdateDone(true);
-    setUpdateMessage(`🎉 升级成功！系统已顺利更新至 ${targetVersion}，页面即将自动重新载入...`);
-
-    setTimeout(() => {
-      window.location.reload();
-    }, 2200);
+    setUpdateMessage(updateResult.message);
   };
 
   useEffect(() => {
@@ -144,15 +128,19 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
             </div>
           </div>
 
-          {/* 状态徽章与一键在线热更新 */}
+          {/* 状态徽章与平台更新指引 */}
           {result && (
             <div className="space-y-3">
-              {result.hasUpdate ? (
+              {result.versionMismatch ? (
                 <div className="p-4 bg-emerald-950/40 border border-emerald-500/50 rounded-lg space-y-3 text-emerald-200">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 font-bold text-xs">
                       <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
-                      <span>检测到全新发布版本 {result.latestVersion}！</span>
+                      <span>
+                        {result.hasUpdate
+                          ? `检测到 GitHub 新版本 ${result.latestVersion}！`
+                          : `版本不一致：GitHub 为 ${result.latestVersion}，本机为 ${result.currentVersion}`}
+                      </span>
                     </div>
                     {result.htmlUrl && (
                       <a
@@ -167,7 +155,7 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
                     )}
                   </div>
 
-                  {/* 一键热更新交互面板 */}
+                  {/* 更新指引交互面板 */}
                   {isUpdating ? (
                     <div className="p-3 bg-slate-950 border border-emerald-500/60 rounded-md space-y-2 animate-in fade-in duration-200">
                       <div className="flex items-center gap-2 text-xs font-bold text-white">
@@ -193,7 +181,7 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
                         className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold rounded-md shadow-md text-xs flex items-center justify-center gap-2 transition-all"
                       >
                         <Sparkles className="w-4 h-4 text-amber-300" />
-                        <span>🚀 立即一键在线热更新此系统 (自动无损升级)</span>
+                        <span>查看此版本的安全更新方式</span>
                       </button>
                     </div>
                   )}
@@ -204,30 +192,6 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                     <span>当前密码数据库与客户端已是最新版本，无需更新。</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setResult({
-                        success: true,
-                        currentVersion: CURRENT_APP_VERSION,
-                        latestVersion: 'v1.2.1',
-                        hasUpdate: true,
-                        releaseName: 'SafeVault v1.2.1 极空间代理登录修复',
-                        releaseNotes: '【功能更新】\n1. 新增极空间 NAS 容器多端智能双向合并与防覆盖保护机制；\n2. 优化桌面端 Electron 原生独立窗口运行体验；\n3. 增强零知识端到端加密与 GitHub 自动更新检测；\n4. 支持断网离线缓存与 PWA 沉浸式小程序。',
-                        publishedAt: new Date().toISOString(),
-                        htmlUrl: 'https://github.com/goupfu/safevault/releases',
-                        assets: [
-                          { name: 'SafeVault-Setup-v1.2.3.exe', downloadUrl: 'https://github.com/goupfu/safevault/releases', size: 68421000 },
-                          { name: 'SafeVault-Mobile-v1.2.3.apk', downloadUrl: 'https://github.com/goupfu/safevault/releases', size: 12450000 }
-                        ]
-                      });
-                    }}
-                    className="text-[10px] text-emerald-400 hover:underline flex items-center gap-1 font-mono"
-                    title="演练测试检测到新版本并测试一键热更新"
-                  >
-                    <Sparkles className="w-3 h-3 text-amber-400" />
-                    <span>测试一键热更新流程</span>
-                  </button>
                 </div>
               )}
             </div>
