@@ -3,6 +3,8 @@ dist/
 .DS_Store
 *.log
 deploy/zspace-package/
+deploy/zspace-v*/
+safevault-zspace-v*.zip
 *.tar
 
 # Runtime/test database files may contain authentication material or session tokens

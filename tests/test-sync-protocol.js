@@ -12,6 +12,9 @@ import assert from 'assert';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const currentAppVersion = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')
+).version;
 
 console.log('--- 开始极空间 NAS 零知识同步协议与版本更新单元测试 ---');
 
@@ -112,9 +115,9 @@ async function runTests() {
   const verRes = await makeRequest({ host: '127.0.0.1', port: TEST_PORT, path: '/api/version', method: 'GET' });
   assert.strictEqual(verRes.status, 200);
   assert.strictEqual(verRes.body.success, true);
-  assert.strictEqual(verRes.body.version, '1.2.6');
-  assert.strictEqual(verRes.body.serverVersion, '1.2.6');
-  assert.strictEqual(verRes.body.frontendVersion, '1.2.6');
+  assert.strictEqual(verRes.body.version, currentAppVersion);
+  assert.strictEqual(verRes.body.serverVersion, currentAppVersion);
+  assert.strictEqual(verRes.body.frontendVersion, currentAppVersion);
   assert.strictEqual(verRes.body.versionsMatch, true, 'NAS 前后端构建版本必须一致');
   assert.strictEqual(verRes.body.disasterBackupReady, true, '独立灾备必须在服务启动时就绪');
 

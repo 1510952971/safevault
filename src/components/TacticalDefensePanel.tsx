@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Cpu, AlertTriangle, ShieldCheck, CopyCheck, KeyRound, Key, FileText, EyeOff, Pin, PinOff, ChevronRight } from 'lucide-react';
+import { Clock, Cpu, AlertTriangle, CopyCheck, KeyRound, EyeOff, Pin, PinOff, ChevronRight, BookOpen } from 'lucide-react';
 import { CURRENT_APP_VERSION } from '../utils/updateChecker';
 
 interface TacticalDefensePanelProps {
@@ -24,6 +24,7 @@ interface TacticalDefensePanelProps {
   onOpenEmergencyKit?: () => void;
   onOpenSyncModal?: () => void;
   onOpenUpdateModal?: () => void;
+  onOpenUserManual?: () => void;
 }
 
 export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
@@ -47,7 +48,8 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
   onOpenChangeMasterPassword,
   onOpenEmergencyKit,
   onOpenSyncModal,
-  onOpenUpdateModal
+  onOpenUpdateModal,
+  onOpenUserManual
 }) => {
   const hasRisk = weakCount > 0 || reusedCount > 0;
 
@@ -341,6 +343,23 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
                   检查 GitHub 新版本
                 </span>
                 <span className="text-[10px] text-slate-400 font-mono block">CHECK RELEASES // {CURRENT_APP_VERSION}</span>
+              </div>
+            </button>
+          )}
+
+          {onOpenUserManual && (
+            <button
+              onClick={onOpenUserManual}
+              className="w-full relative flex items-center bg-white hover:bg-slate-50 border border-slate-300 rounded overflow-hidden transition-all group p-0 shadow-sm"
+            >
+              <div className="w-9 h-11 bg-slate-900 flex items-center justify-center text-brand-lime shrink-0">
+                <BookOpen className="w-4 h-4" />
+              </div>
+              <div className="flex-1 px-3 text-left">
+                <span className="text-xs font-bold text-slate-900 group-hover:text-slate-950 block">
+                  使用说明与运维手册
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono block">GUIDE // BACKUP // RECOVERY</span>
               </div>
             </button>
           )}

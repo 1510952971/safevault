@@ -29,6 +29,7 @@ import { ChangeMasterPasswordModal } from './components/ChangeMasterPasswordModa
 import { EmergencyKitModal } from './components/EmergencyKitModal';
 import { SyncAccountModal } from './components/SyncAccountModal';
 import { UpdateCheckModal } from './components/UpdateCheckModal';
+import { UserManualModal } from './components/UserManualModal';
 import {
   loadNasSyncConfig,
   saveNasSyncConfig,
@@ -74,6 +75,7 @@ export const App: React.FC = () => {
   const [isEmergencyKitModalOpen, setIsEmergencyKitModalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [isUserManualOpen, setIsUserManualOpen] = useState(false);
 
   // 极空间 NAS 配置与账号登录状态
   const [nasConfig, setNasConfig] = useState<NasSyncConfig | null>(() => loadNasSyncConfig());
@@ -1119,6 +1121,7 @@ export const App: React.FC = () => {
             isNasConnected={Boolean(nasConfig?.token)}
             onOpenSyncModal={() => setIsSyncModalOpen(true)}
             onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
+            onOpenUserManual={() => setIsUserManualOpen(true)}
           />
         )}
       </main>
@@ -1246,6 +1249,11 @@ export const App: React.FC = () => {
       <UpdateCheckModal
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
+      />
+
+      <UserManualModal
+        isOpen={isUserManualOpen}
+        onClose={() => setIsUserManualOpen(false)}
       />
 
       {/* 浏览器失焦/切后台高斯模糊防肩窥隐私幕布 */}

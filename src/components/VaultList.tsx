@@ -39,6 +39,7 @@ interface VaultListProps {
   isNasConnected?: boolean;
   onOpenSyncModal?: () => void;
   onOpenUpdateModal?: () => void;
+  onOpenUserManual?: () => void;
 }
 
 export const VaultList: React.FC<VaultListProps> = ({
@@ -70,7 +71,8 @@ export const VaultList: React.FC<VaultListProps> = ({
   onOpenEmergencyKit,
   isNasConnected,
   onOpenSyncModal,
-  onOpenUpdateModal
+  onOpenUpdateModal,
+  onOpenUserManual
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -613,6 +615,7 @@ export const VaultList: React.FC<VaultListProps> = ({
             isNasConnected={isNasConnected}
             onOpenSyncModal={onOpenSyncModal}
             onOpenUpdateModal={onOpenUpdateModal}
+            onOpenUserManual={onOpenUserManual}
           />
         )}
       </div>
@@ -677,6 +680,7 @@ export const VaultList: React.FC<VaultListProps> = ({
                 isNasConnected={isNasConnected}
                 onOpenSyncModal={onOpenSyncModal}
                 onOpenUpdateModal={onOpenUpdateModal}
+                onOpenUserManual={onOpenUserManual}
               />
             </div>
           </div>
