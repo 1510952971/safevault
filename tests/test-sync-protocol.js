@@ -6,6 +6,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import assert from 'assert';
 
@@ -89,6 +90,7 @@ async function runTests() {
   const TEST_PORT = 8099;
   const TEST_DATA_DIR = path.join(__dirname, '..', 'data', `test-data-${process.pid}-${Date.now()}`);
   const TEST_DB = path.join(TEST_DATA_DIR, 'vault-store.json');
+  const TEST_BACKUP_DIR = path.join(TEST_DATA_DIR, 'external-backup');
 
   if (!fs.existsSync(TEST_DATA_DIR)) {
     fs.mkdirSync(TEST_DATA_DIR, { recursive: true });
@@ -96,6 +98,7 @@ async function runTests() {
 
   process.env.PORT = String(TEST_PORT);
   process.env.DATA_DIR = TEST_DATA_DIR;
+  process.env.BACKUP_DIR = TEST_BACKUP_DIR;
 
   // 动态导入 server
   const serverModule = await import('../server/index.js');
@@ -109,10 +112,11 @@ async function runTests() {
   const verRes = await makeRequest({ host: '127.0.0.1', port: TEST_PORT, path: '/api/version', method: 'GET' });
   assert.strictEqual(verRes.status, 200);
   assert.strictEqual(verRes.body.success, true);
-  assert.strictEqual(verRes.body.version, '1.2.5');
-  assert.strictEqual(verRes.body.serverVersion, '1.2.5');
-  assert.strictEqual(verRes.body.frontendVersion, '1.2.5');
+  assert.strictEqual(verRes.body.version, '1.2.6');
+  assert.strictEqual(verRes.body.serverVersion, '1.2.6');
+  assert.strictEqual(verRes.body.frontendVersion, '1.2.6');
   assert.strictEqual(verRes.body.versionsMatch, true, 'NAS 前后端构建版本必须一致');
+  assert.strictEqual(verRes.body.disasterBackupReady, true, '独立灾备必须在服务启动时就绪');
 
   // 注册
   const testUser = 'zspace_tester';
@@ -321,6 +325,48 @@ async function runTests() {
   assert.strictEqual(pullRes.body.version, 4);
   assert.strictEqual(pullRes.body.encryptedItems.length, 2);
   assert.strictEqual(pullRes.body.encryptedItems[0].ciphertext, 'ENCRYPTED_PAYLOAD_1==');
+
+  const latestDisasterBackup = path.join(TEST_BACKUP_DIR, 'database', 'vault-store-latest.json');
+  assert.ok(fs.existsSync(latestDisasterBackup), '完整数据库必须写入独立灾备目录');
+  const disasterDb = JSON.parse(fs.readFileSync(latestDisasterBackup, 'utf8'));
+  assert.strictEqual(disasterDb.users[testUser].encryptedItems.length, 2, '外部灾备必须包含回滚后的完整密文库');
+
+  // 模拟整个 data 目录丢失：用空目录和原外部备份启动新服务，必须自动恢复账号与密文。
+  const RECOVERY_PORT = TEST_PORT + 1;
+  const RECOVERY_DATA_DIR = `${TEST_DATA_DIR}-recovered`;
+  fs.mkdirSync(RECOVERY_DATA_DIR, { recursive: true });
+  const recoveryServer = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js')], {
+    cwd: path.join(__dirname, '..'),
+    env: {
+      ...process.env,
+      PORT: String(RECOVERY_PORT),
+      DATA_DIR: RECOVERY_DATA_DIR,
+      BACKUP_DIR: TEST_BACKUP_DIR
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('灾备恢复服务启动超时')), 5000);
+      recoveryServer.stdout.on('data', (chunk) => {
+        if (String(chunk).includes('服务已启动')) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      });
+      recoveryServer.once('exit', (code) => {
+        clearTimeout(timeout);
+        reject(new Error(`灾备恢复服务意外退出: ${code}`));
+      });
+    });
+    const recoveredHealth = await makeRequest({ host: '127.0.0.1', port: RECOVERY_PORT, path: '/api/version', method: 'GET' });
+    assert.strictEqual(recoveredHealth.body.userCount, 1, 'data 整体丢失后必须从外部备份恢复账号');
+    const recoveredDb = JSON.parse(fs.readFileSync(path.join(RECOVERY_DATA_DIR, 'vault-store.json'), 'utf8'));
+    assert.strictEqual(recoveredDb.users[testUser].encryptedItems.length, 2, '自动恢复后的主库必须包含完整密文');
+  } finally {
+    recoveryServer.kill();
+    try { fs.rmSync(RECOVERY_DATA_DIR, { recursive: true, force: true }); } catch {}
+  }
 
   // 未授权拉取应被阻断
   const unauthPull = await makeRequest({

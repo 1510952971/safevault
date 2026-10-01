@@ -166,7 +166,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 1. 在已经拉取最新代码的电脑上运行 **`生成极空间部署包.bat`**；
 2. 将 `deploy\zspace-package\dist`、`server` 和 `package.json` 一起覆盖到极空间原 SafeVault 目录；
-3. 不删除、不覆盖极空间原目录中的 `data` 文件夹；
+3. 不删除、不覆盖极空间原目录中的 `data` 和独立的 `safevault-backup` 文件夹；
 4. 在极空间 Docker 中重启原容器；
 5. 访问 `http://NAS地址:8088/api/version`，确认 `serverVersion`、`frontendVersion` 都是当前版本且 `versionsMatch` 为 `true`。
 
@@ -180,6 +180,6 @@ docker compose -f deploy/docker-compose.yml up -d --build
 - 桌面端首次登录会自动填入固定局域网地址 `http://192.168.5.134:18088`；已保存的地址优先，不会被默认值覆盖。
 - 登录后客户端始终拉取极空间上的最新密文金库；新增、修改、删除会先写回极空间，再更新本地缓存。
 - 云端同步采用版本锁，旧设备不会直接覆盖新设备的数据；发生版本冲突时必须先重新拉取云端版本。
-- 每次覆盖或回滚前自动写入 `data/backups/` 历史快照，默认保留最近 30 个版本，可在同步中心查看并回滚。
+- 完整数据库和用户历史快照写入独立挂载的 `safevault-backup/`，默认各保留最近 30 个版本；即使整个 `data/` 被删除，服务重启也会从外部最新备份自动恢复。
 - 极空间远程访问生成的 `127.0.0.1:xxxxx` 是当前电脑的临时代理通道，不是账号所属地址。端口每次启动变化属于正常现象；PWA/远程访问页面会自动跟随当前网页，客户端也不会继续使用旧的本机代理端口。
 - 如果登录提示当前代理指向了另一份数据库，请检查 Docker `safevault` 是否始终挂载同一个 `/app/data` 目录；不要因为端口变化重新注册账号，也不要删除并重建带有新数据目录的容器。

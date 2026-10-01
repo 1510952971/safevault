@@ -97,8 +97,8 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 1. 所有电脑、手机都使用同一个 SafeVault 同步账号登录；密码明文不会上传，极空间只保存认证摘要和加密密文。
 2. 每次设备推送都会校验云端版本号。若另一台设备已经更新，旧设备的推送会被拒绝，提示先执行「智能双向同步」，避免误覆盖。
-3. 每次推送覆盖前，服务端会在映射目录 `data/backups/` 保存历史快照，默认保留最近 30 个版本。进入「极空间 NAS 同步」后，在「云端历史备份 / 可回滚」中选择版本恢复；回滚前也会自动备份当前版本。
-4. Docker 更新时只替换 `dist/` 和 `server/`，必须保留原来的 `data/` 映射目录。历史备份也在该目录内，不能改成新的空目录。
+3. 服务端把完整数据库写入独立映射目录 `safevault-backup/database/`，并把用户历史版本写入 `safevault-backup/users/`，默认各保留最近 30 份。
+4. Docker 需要把极空间 `Docker/safevault-backup` 单独映射为 `/app/backup`。更新时保留 `data/` 与 `safevault-backup/`；即使误删整个 `data/`，重启也会从外部最新备份恢复。
 
 ### 4. 远程访问地址变化
 
@@ -113,7 +113,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 ## 五、程序版本更新与维护
 
 SafeVault 现已全面内置 **GitHub Releases 自动更新检测**：
-1. 在 SafeVault 界面顶栏点击版本号（当前为 `v1.2.5`）或在防卫面板点击 **「检查版本更新」**；
+1. 在 SafeVault 界面顶栏点击版本号（当前为 `v1.2.6`）或在防卫面板点击 **「检查版本更新」**；
 2. 系统会自动比对 GitHub 最新发布的 Release 源码包、Windows 客户端与安卓 APK；
 3. **极空间 Docker 更新指引**：
    - 当 GitHub 发布新版本镜像后，进入极空间「Docker」➔「镜像库」拉取最新镜像；

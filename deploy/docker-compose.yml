@@ -12,9 +12,13 @@ services:
     volumes:
       # 持久化数据目录：将极空间 NAS 物理存储目录映射进容器的 /app/data
       - ../data:/app/data
+      # 独立灾备目录：必须与 data 分开，删除 data 时备份仍然存在
+      - ../safevault-backup:/app/backup
     environment:
       - TZ=Asia/Shanghai
       - PORT=8088
+      - DATA_DIR=/app/data
+      - BACKUP_DIR=/app/backup
       # 通过 NAS / Nginx / Caddy 的 HTTPS 反向代理访问时启用；局域网直连 HTTP 请保持 false。
       - REQUIRE_HTTPS=false
       # 生产环境填写前端 HTTPS 域名，例如 https://vault.example.com；不要使用 *。

@@ -5,7 +5,7 @@
  * 1. 纯原生 Node.js 实现（零第三方外部依赖，内存占用 < 30MB，极速冷启）；
  * 2. 静态托管：无缝提供前端 Single Page App 静态文件及 SPA 路由重定向；
  * 3. 零知识密文同步 API：服务端仅存储认证摘要与客户端加密后的密文 Blob，主密码绝不上云；
- * 4. 原子持久化：数据安全存储于 /app/data/vault-store.json，支持掉电防丢与 Docker 卷映射。
+ * 4. 双目录灾备：运行数据库与外部备份分别挂载，data 整体丢失时可自动恢复。
  */
 
 import http from 'http';
@@ -21,7 +21,11 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 8088;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'vault-store.json');
-const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+const BACKUP_DIR = process.env.BACKUP_DIR || path.join(__dirname, '..', 'safevault-backup');
+const USER_BACKUP_DIR = path.join(BACKUP_DIR, 'users');
+const DATABASE_BACKUP_DIR = path.join(BACKUP_DIR, 'database');
+const LATEST_DATABASE_BACKUP = path.join(DATABASE_BACKUP_DIR, 'vault-store-latest.json');
+const LEGACY_BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, '..', 'dist');
 const REQUIRE_HTTPS = process.env.REQUIRE_HTTPS === 'true';
 const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:3000,null,file://').split(',').map((origin) => origin.trim()).filter(Boolean);
@@ -37,6 +41,7 @@ function getFrontendVersion() {
   }
 }
 const MAX_SNAPSHOTS = 30;
+const MAX_DATABASE_BACKUPS = 30;
 
 // 认证失败限流：按 IP 与账号分别计数，避免 authHash 被暴力重放。
 const authFailures = new Map();
@@ -80,8 +85,8 @@ function consumeAuthChallenge(username, challenge) {
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
-if (!fs.existsSync(BACKUP_DIR)) {
-  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+for (const directory of [BACKUP_DIR, USER_BACKUP_DIR, DATABASE_BACKUP_DIR]) {
+  if (!fs.existsSync(directory)) fs.mkdirSync(directory, { recursive: true });
 }
 
 // 内存数据库与持久化
@@ -93,58 +98,118 @@ let db = {
 // 加载持久化数据
 function loadDatabase() {
   if (fs.existsSync(DB_FILE)) {
+    let content;
     try {
-      const content = fs.readFileSync(DB_FILE, 'utf-8');
+      content = fs.readFileSync(DB_FILE, 'utf-8');
       db = JSON.parse(content);
       if (!db.users) db.users = {};
       if (!db.sessions) db.sessions = {};
-      console.log(`[SafeVault DB] 成功载入数据，当前注册用户数: ${Object.keys(db.users).length}`);
     } catch (e) {
-      console.error('[SafeVault DB] 载入数据库文件失败，将使用空库:', e);
+      console.error('[SafeVault DB] 主数据库损坏，尝试从外部备份恢复:', e);
+      if (restoreDatabaseFromExternalBackup()) return;
+      throw new Error('主数据库损坏且没有可用的外部备份，服务已停止以防止空库覆盖');
     }
-  } else {
-    saveDatabase();
+
+    migrateLegacyUserSnapshots();
+    saveFullDatabaseBackup(JSON.stringify(db, null, 2));
+    console.log(`[SafeVault DB] 成功载入数据并完成外部灾备，当前注册用户数: ${Object.keys(db.users).length}`);
+    return;
+  }
+
+  if (restoreDatabaseFromExternalBackup()) return;
+  console.warn('[SafeVault DB] 未找到主数据库或外部备份，将初始化全新空库');
+  saveDatabase();
+}
+
+function isValidDatabase(candidate) {
+  return Boolean(candidate && typeof candidate === 'object' && candidate.users && candidate.sessions);
+}
+
+function writeFileAtomic(filePath, content) {
+  const tmpFile = `${filePath}.tmp.${Date.now()}.${crypto.randomBytes(4).toString('hex')}`;
+  fs.writeFileSync(tmpFile, content, 'utf-8');
+  try {
+    fs.renameSync(tmpFile, filePath);
+  } catch (_renameErr) {
+    fs.writeFileSync(filePath, content, 'utf-8');
+    try { fs.unlinkSync(tmpFile); } catch {}
   }
 }
 
-// 原子写入持久化数据 (带 Windows 跨平台锁容错)
+function saveFullDatabaseBackup(content) {
+  const parsed = JSON.parse(content);
+  if (!isValidDatabase(parsed)) throw new Error('拒绝备份无效数据库结构');
+  const fileName = `vault-store-${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomBytes(3).toString('hex')}.json`;
+  writeFileAtomic(path.join(DATABASE_BACKUP_DIR, fileName), content);
+  writeFileAtomic(LATEST_DATABASE_BACKUP, content);
+
+  const archives = fs.readdirSync(DATABASE_BACKUP_DIR)
+    .filter((name) => /^vault-store-\d.*\.json$/.test(name))
+    .sort()
+    .reverse();
+  for (const oldFile of archives.slice(MAX_DATABASE_BACKUPS)) {
+    try { fs.unlinkSync(path.join(DATABASE_BACKUP_DIR, oldFile)); } catch {}
+  }
+}
+
+function restoreDatabaseFromExternalBackup() {
+  if (!fs.existsSync(LATEST_DATABASE_BACKUP)) return false;
+  try {
+    const content = fs.readFileSync(LATEST_DATABASE_BACKUP, 'utf-8');
+    const restored = JSON.parse(content);
+    if (!isValidDatabase(restored)) throw new Error('外部备份结构无效');
+    db = restored;
+    writeFileAtomic(DB_FILE, content);
+    console.warn(`[SafeVault Disaster Recovery] 已从外部备份自动恢复数据库，用户数: ${Object.keys(db.users).length}`);
+    return true;
+  } catch (error) {
+    console.error('[SafeVault Disaster Recovery] 外部备份恢复失败，拒绝静默覆盖:', error);
+    throw error;
+  }
+}
+
+// 原子写入运行数据库，并在独立挂载目录保存完整灾备副本。
 function saveDatabase() {
   const content = JSON.stringify(db, null, 2);
   try {
-    const tmpFile = `${DB_FILE}.tmp.${Date.now()}`;
-    fs.writeFileSync(tmpFile, content, 'utf-8');
-    try {
-      fs.renameSync(tmpFile, DB_FILE);
-    } catch (_renameErr) {
-      // Windows 锁竞争回退直接覆盖写入
-      fs.writeFileSync(DB_FILE, content, 'utf-8');
-      try { fs.unlinkSync(tmpFile); } catch {}
-    }
-  } catch (e) {
-    try {
-      fs.writeFileSync(DB_FILE, content, 'utf-8');
-    } catch (directErr) {
-      console.error('[SafeVault DB] 持久化落盘失败:', directErr);
-    }
+    // 先写独立备份，备份失败时不允许更新主库。
+    saveFullDatabaseBackup(content);
+    writeFileAtomic(DB_FILE, content);
+  } catch (error) {
+    console.error('[SafeVault DB] 数据库或外部备份写入失败:', error);
+    throw error;
   }
 }
 
 function writeJsonAtomic(filePath, value) {
-  const tempFile = `${filePath}.tmp.${Date.now()}.${crypto.randomBytes(4).toString('hex')}`;
-  fs.writeFileSync(tempFile, JSON.stringify(value, null, 2), 'utf-8');
-  fs.renameSync(tempFile, filePath);
+  writeFileAtomic(filePath, JSON.stringify(value, null, 2));
 }
 
 function backupDirectoryFor(username) {
   const userKey = crypto.createHash('sha256').update(String(username)).digest('hex').slice(0, 24);
-  const directory = path.join(BACKUP_DIR, userKey);
+  const directory = path.join(USER_BACKUP_DIR, userKey);
   if (!fs.existsSync(directory)) fs.mkdirSync(directory, { recursive: true });
   return directory;
 }
 
+function migrateLegacyUserSnapshots() {
+  if (!fs.existsSync(LEGACY_BACKUP_DIR)) return;
+  for (const [username, user] of Object.entries(db.users || {})) {
+    const userKey = crypto.createHash('sha256').update(String(username)).digest('hex').slice(0, 24);
+    const legacyDirectory = path.join(LEGACY_BACKUP_DIR, userKey);
+    if (!fs.existsSync(legacyDirectory)) continue;
+    const externalDirectory = backupDirectoryFor(username);
+    for (const entry of Array.isArray(user.snapshots) ? user.snapshots : []) {
+      if (!entry.fileName) continue;
+      const source = path.join(legacyDirectory, entry.fileName);
+      const destination = path.join(externalDirectory, entry.fileName);
+      if (fs.existsSync(source) && !fs.existsSync(destination)) fs.copyFileSync(source, destination);
+    }
+  }
+}
+
 /**
- * 在覆盖云端当前版本前生成独立历史快照。
- * 快照文件与 vault-store.json 同属 data 映射目录，升级容器不会丢失。
+ * 在覆盖云端当前版本前生成外部历史快照。
  */
 function createUserSnapshot(username, currentUser, reason, deviceName) {
   if (!currentUser?.vaultMeta) return null;
@@ -214,8 +279,13 @@ function readUserSnapshot(username, currentUser, snapshotId) {
   if (!entry) return null;
 
   if (entry.fileName) {
-    const filePath = path.join(backupDirectoryFor(username), entry.fileName);
-    if (!fs.existsSync(filePath)) return null;
+    const userKey = crypto.createHash('sha256').update(String(username)).digest('hex').slice(0, 24);
+    const candidates = [
+      path.join(backupDirectoryFor(username), entry.fileName),
+      path.join(LEGACY_BACKUP_DIR, userKey, entry.fileName)
+    ];
+    const filePath = candidates.find((candidate) => fs.existsSync(candidate));
+    if (!filePath) return null;
     try { return JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch { return null; }
   }
 
@@ -412,6 +482,8 @@ const server = http.createServer(async (req, res) => {
           serverVersion: SERVER_VERSION,
           frontendVersion: getFrontendVersion(),
           versionsMatch: getFrontendVersion() === SERVER_VERSION,
+          disasterBackupReady: fs.existsSync(LATEST_DATABASE_BACKUP),
+          disasterBackupCount: fs.readdirSync(DATABASE_BACKUP_DIR).filter((name) => /^vault-store-\d.*\.json$/.test(name)).length,
           userCount: Object.keys(db.users).length,
           timestamp: new Date().toISOString()
         });
@@ -691,7 +763,7 @@ const server = http.createServer(async (req, res) => {
           code: 'DEPLOYMENT_UPDATE_REQUIRED',
           currentVersion: SERVER_VERSION,
           targetVersion,
-          message: '极空间版本更新必须覆盖最新 dist、server 与 package.json 后重启容器；data 目录保持原挂载，不会丢失账号和密文数据。'
+          message: '极空间版本更新必须覆盖最新 dist、server 与 package.json 后重启容器；data 与 safevault-backup 两个目录都必须保留并独立挂载。'
         });
       }
 
@@ -713,6 +785,7 @@ server.listen(PORT, () => {
   console.log(`🧩 服务版本: ${SERVER_VERSION}`);
   console.log(`🌐 本地监听端口: http://0.0.0.0:${PORT}`);
   console.log(`📁 数据持久化路径: ${DB_FILE}`);
+  console.log(`🛟 独立灾备路径: ${BACKUP_DIR}`);
   console.log(`📦 前端静态资源目录: ${STATIC_DIR}`);
   console.log('====================================================');
 });
