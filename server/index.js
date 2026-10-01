@@ -28,7 +28,7 @@ const LATEST_DATABASE_BACKUP = path.join(DATABASE_BACKUP_DIR, 'vault-store-lates
 const LEGACY_BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, '..', 'dist');
 const REQUIRE_HTTPS = process.env.REQUIRE_HTTPS === 'true';
-const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:3000,null,file://').split(',').map((origin) => origin.trim()).filter(Boolean);
+const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:3000,https://localhost,capacitor://localhost,null,file://').split(',').map((origin) => origin.trim()).filter(Boolean);
 const packageInfo = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
 const SERVER_VERSION = packageInfo.version;
 
@@ -399,8 +399,8 @@ function parseCookies(req) {
 
 function getCorsOrigin(req) {
   const origin = String(req.headers.origin || '');
-  // Electron 生产桌面端通过 file:// 加载，部分 Chromium 版本会发送 Origin: null。
-  // 桌面端同步同时使用 Bearer Token，不依赖跨域 Cookie。
+  // Electron 使用 file://；Capacitor Android/iOS 使用 localhost 或 capacitor://localhost。
+  // 所有客户端同步同时使用 Bearer Token，不依赖跨域 Cookie。
   if (origin === 'null' || origin.startsWith('file://')) return origin || 'null';
   return CORS_ORIGINS.includes(origin) ? origin : CORS_ORIGINS[0];
 }

@@ -80,14 +80,15 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="shrink-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-3 sm:px-4 lg:px-5 h-14 flex items-center gap-2 transition-all shadow-xs w-full min-w-0 overflow-visible select-none">
+    <header className="mobile-safe-top shrink-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 px-3 sm:px-4 lg:px-5 min-h-14 flex items-center gap-2 transition-all shadow-xs w-full min-w-0 overflow-visible select-none">
       
       {/* 左侧系统标识与版本 */}
       <div className="flex items-center gap-2.5 min-w-0 shrink whitespace-nowrap">
         <SafeVaultLogo size={32} className="shrink-0 drop-shadow-xs" />
         <div className="flex items-center gap-2 min-w-0 whitespace-nowrap">
           <h1 className="font-extrabold text-sm sm:text-base tracking-tight text-slate-900 flex items-center gap-1.5 whitespace-nowrap">
-            <span>密码数据库</span>
+            <span className="sm:hidden">SafeVault</span>
+            <span className="hidden sm:inline">密码数据库</span>
             <span className="text-xs font-mono font-semibold text-slate-400 hidden sm:inline">// SAFEVAULT</span>
           </h1>
           <span className="hidden md:inline-flex items-center gap-1 text-[10px] font-mono uppercase bg-brand-lime/20 text-slate-800 border border-brand-lime/60 px-2 py-0.5 rounded font-semibold whitespace-nowrap">
@@ -111,17 +112,14 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="ml-auto flex-1 min-w-0 flex items-center justify-end gap-1.5 whitespace-nowrap overflow-visible">
         {!isLocked && (
           <>
-            {/* 终端编号与体量 (超大宽屏展示) */}
+            {/* 凭据体量 (超大宽屏展示) */}
             <div className="hidden 2xl:flex items-center gap-2 text-xs font-mono text-slate-500 bg-slate-100 border border-slate-200 px-2.5 py-1.5 rounded whitespace-nowrap">
-              <span>TERMINAL</span>
-              <span className="font-bold text-slate-800">#0027</span>
-              <span className="w-1 h-3 bg-brand-lime mx-0.5"></span>
               <span>{totalItems} 项</span>
             </div>
 
             {/* 超时自动锁屏倒计时与配置 */}
             <div
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200/80 border border-slate-200 text-xs font-mono text-slate-700 transition-colors whitespace-nowrap shrink-0"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200/80 border border-slate-200 text-xs font-mono text-slate-700 transition-colors whitespace-nowrap shrink-0"
               title="自动锁屏倒计时，点击可修改"
             >
               <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
@@ -168,7 +166,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* 二级安全密码设置/状态 */}
             <button
               onClick={onOpenSecondaryPasswordModal}
-              className={`px-2.5 py-1.5 rounded border text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+              className={`hidden sm:flex px-2.5 py-1.5 rounded border text-xs font-medium transition-colors items-center gap-1.5 whitespace-nowrap shrink-0 ${
                 hasSecondaryPassword
                   ? isSecondaryAuthorized
                     ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
@@ -186,7 +184,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* 强密码发生器 */}
             <button
               onClick={onOpenGenerator}
-              className="px-2.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              className="hidden sm:flex px-2.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-medium transition-colors items-center gap-1.5 whitespace-nowrap shrink-0"
               title="强密码发生器"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
@@ -196,7 +194,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* 备份与恢复 */}
             <button
               onClick={onOpenBackup}
-              className="px-2.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              className="hidden sm:flex px-2.5 py-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-medium transition-colors items-center gap-1.5 whitespace-nowrap shrink-0"
               title="备份与恢复"
             >
               <DownloadCloud className="w-3.5 h-3.5 text-sky-600 shrink-0" />

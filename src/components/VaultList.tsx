@@ -316,9 +316,9 @@ export const VaultList: React.FC<VaultListProps> = ({
       )}
 
       {/* 2. 中部核心主监控看板与凭据列表 (独立容器平滑滚动) */}
-      <section className="flex-1 h-full overflow-y-auto min-w-0 bg-[#F5F6F8] p-4 sm:p-6 space-y-5 scrollbar-none">
+      <section className="flex-1 h-full overflow-y-auto min-w-0 bg-[#F5F6F8] p-3 pb-24 sm:p-6 space-y-4 sm:space-y-5 scrollbar-none">
         {/* 窄窗口下收起两侧面板，主内容保持完整宽度 */}
-        <div className="2xl:hidden flex items-center justify-between gap-2 -mb-1">
+        <div className="hidden sm:flex 2xl:hidden items-center justify-between gap-2 -mb-1">
           {!isSidebarPinned && (
             <button
               type="button"
@@ -377,7 +377,7 @@ export const VaultList: React.FC<VaultListProps> = ({
         )}
 
         {/* 核心置顶凭据展示区 (专业密码管理器设计) */}
-        <div>
+        <div className="hidden sm:block">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2 border-l-4 border-brand-lime pl-2.5">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
@@ -568,6 +568,29 @@ export const VaultList: React.FC<VaultListProps> = ({
           )}
         </div>
       </section>
+
+      {/* 手机端拇指可达主导航。分类和安全中心使用抽屉，避免压缩凭据内容。 */}
+      <nav className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 items-end border-t border-slate-200 bg-white/95 px-2 pt-1.5 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-md sm:hidden" aria-label="移动端主导航">
+        <button type="button" onClick={() => setSelectedCategory('all')} className={`mobile-nav-item ${selectedCategory === 'all' ? 'text-slate-950' : 'text-slate-400'}`}>
+          <KeyRound className="h-5 w-5" />
+          <span>密码库</span>
+        </button>
+        <button type="button" onClick={() => setSelectedCategory('favorites')} className={`mobile-nav-item ${selectedCategory === 'favorites' ? 'text-amber-600' : 'text-slate-400'}`}>
+          <Star className={`h-5 w-5 ${selectedCategory === 'favorites' ? 'fill-amber-500' : ''}`} />
+          <span>置顶</span>
+        </button>
+        <button type="button" onClick={onAddNew} className="mx-auto -mt-5 flex h-12 w-12 items-center justify-center rounded-full bg-slate-950 text-brand-lime shadow-lg ring-4 ring-white" aria-label="新增凭据" title="新增凭据">
+          <Plus className="h-6 w-6" />
+        </button>
+        <button type="button" onClick={() => setIsDefenseOpen(true)} className="mobile-nav-item text-slate-400">
+          <Shield className="h-5 w-5" />
+          <span>安全</span>
+        </button>
+        <button type="button" onClick={() => setIsSidebarOpen(true)} className="mobile-nav-item text-slate-400">
+          <Menu className="h-5 w-5" />
+          <span>分类</span>
+        </button>
+      </nav>
 
       {/* 3. 右侧安全审计与防御面板 */}
       <div className={`${isDefensePinned ? 'flex' : 'hidden 2xl:flex'} shrink-0 h-full`}>

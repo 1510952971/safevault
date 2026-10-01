@@ -31,7 +31,7 @@ SafeVault 是一款专为个人打造的**高安全性、零知识架构（Zero-
 │   │   ├── crypto.ts          # Web Crypto API 零知识底层加密引擎
 │   │   └── storage.ts         # 本地持久化、30秒安全剪贴板销毁
 │   ├── components/            # 机能战术风格组件群
-│   │   ├── Header.tsx         # 战术顶栏 (终端编号 #0027)
+│   │   ├── Header.tsx         # 响应式应用顶栏
 │   │   ├── Sidebar.tsx        # 01~06 竖向战术编号菜单
 │   │   ├── VaultOverview.tsx  # 顶部 HUD 监控看板 (等级 1/4 比率与4列参数格)
 │   │   ├── VaultList.tsx      # 核心设施与槽位列表网格
@@ -173,6 +173,18 @@ docker compose -f deploy/docker-compose.yml up -d --build
 桌面端可以下载新发行版后重启更新；NAS 容器无法安全地在运行中替换自身文件，因此不能采用完全相同的更新方式。NAS 必须按上述步骤整体替换程序文件并重启，但始终保留 `data` 目录。
 
 `dist/assets` 与 `deploy/zspace-package` 属于构建产物，按规范不提交到 GitHub；每台电脑拉取代码后必须先构建，再生成 NAS 部署包。完整操作手册见 [docs/多电脑协作与发布更新规范.md](docs/多电脑协作与发布更新规范.md)。
+
+### Android 与 iOS 客户端
+
+项目包含 Capacitor 8 原生工程：Android 位于 `android/`，iOS 位于 `ios/`。两端共用 Web、Windows 和 NAS 的零知识加密与自动同步实现。
+
+```bash
+npm run mobile:sync
+npm run android:open
+npm run ios:open
+```
+
+移动端版本会由 `package.json` 自动同步。完整构建、签名与发布流程见 [移动端构建与发布指南](docs/移动端构建与发布指南.md)。
 
 ### 极空间账号同步与可回滚保护
 

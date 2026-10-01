@@ -23,4 +23,4 @@ services:
       - REQUIRE_HTTPS=false
       # 生产环境填写前端 HTTPS 域名，例如 https://vault.example.com；不要使用 *。
       # 域名变化时，把新旧前端入口都写入，逗号分隔；同源访问无需填写。
-      - CORS_ORIGIN=https://vault.example.com,http://localhost:3000
+      - CORS_ORIGIN=https://vault.example.com,http://localhost:3000,https://localhost,capacitor://localhost

@@ -38,7 +38,7 @@ export const EmergencyKitModal: React.FC<EmergencyKitModalProps> = ({
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <title>SafeVault 应急救援卡 - 终端 #0027</title>
+  <title>SafeVault 应急救援卡</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #0f172a; padding: 40px; margin: 0; }
     .card { max-width: 720px; margin: 0 auto; background: white; border: 2px solid #0f172a; border-radius: 12px; padding: 36px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
@@ -64,11 +64,9 @@ export const EmergencyKitModal: React.FC<EmergencyKitModalProps> = ({
         <h1 class="title">SafeVault 离线应急救援凭证</h1>
         <div class="subtitle">OFFLINE EMERGENCY RECOVERY KIT // ZERO-KNOWLEDGE</div>
       </div>
-      <div style="font-family: monospace; font-weight: bold; background: #e2e8f0; padding: 4px 10px; border-radius: 4px;">#0027</div>
     </div>
 
     <div class="meta-grid">
-      <div class="meta-item"><b>VAULT TERMINAL // 金库代号</b>#0027</div>
       <div class="meta-item"><b>CREATED AT // 初始建档时间</b>${createdAtFormatted}</div>
       <div class="meta-item"><b>CREDENTIALS // 当前凭据体量</b>${totalItemsCount} 项</div>
     </div>
@@ -107,7 +105,7 @@ export const EmergencyKitModal: React.FC<EmergencyKitModalProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `SafeVault_Emergency_Kit_0027.html`;
+    a.download = `SafeVault_Emergency_Kit_${new Date().toISOString().slice(0, 10)}.html`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -167,17 +165,10 @@ export const EmergencyKitModal: React.FC<EmergencyKitModalProps> = ({
                 </div>
               </div>
             </div>
-            <div className="font-mono text-xs font-bold text-slate-700 bg-slate-100 border border-slate-300 px-3 py-1 rounded">
-              TERMINAL: #0027
-            </div>
           </div>
 
           {/* 金库关键参数格 */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs">
-            <div>
-              <span className="text-[10px] text-slate-400 block font-bold">终端代号 / TERMINAL</span>
-              <span className="font-bold text-slate-800">#0027 (SafeVault)</span>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs">
             <div>
               <span className="text-[10px] text-slate-400 block font-bold">建档时间 / CREATED AT</span>
               <span className="font-bold text-slate-800">{createdAtFormatted}</span>

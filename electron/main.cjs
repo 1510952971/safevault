@@ -31,7 +31,7 @@ if (!hasSingleInstanceLock) {
     height: 900,
     minWidth: 1100,
     minHeight: 700,
-    title: 'SafeVault 密码数据库 // 终端 #0027',
+    title: 'SafeVault 密码数据库',
     backgroundColor: '#0f172a',
     webPreferences: {
       nodeIntegration: false,

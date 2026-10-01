@@ -352,6 +352,16 @@ export const USER_MANUAL_SECTIONS: ManualSection[] = [
         warning: 'NAS 容器不能像桌面端一样安全地自我替换运行文件，因此更新方式不同；功能和版本可以一致，但 NAS 端仍需部署新文件或新镜像并重启容器。'
       },
       {
+        heading: 'Android 与 iOS 客户端',
+        bullets: [
+          'Android 与 iOS 使用和 Web、桌面端相同的加密与同步核心，登录同一 NAS 账号后自动获取数据。',
+          '手机端采用底部主导航、中央新增按钮、单列凭据卡，以及抽屉式分类和安全中心。',
+          '局域网默认连接 http://192.168.5.134:18088；外网必须使用稳定 HTTPS 地址。',
+          'Android 安装包由 android 工程构建；iOS 安装包必须在 macOS 的 Xcode 中签名和归档。',
+          '每次发布前执行 npm run mobile:sync，程序会自动同步网页资源和 Android、iOS 版本号。'
+        ]
+      },
+      {
         heading: '仓库辅助脚本',
         bullets: [
           '启动本地服务.bat：启动开发或本地 Web 服务。',

@@ -1,6 +1,6 @@
 {
   "name": "safevault",
-  "version": "1.2.7",
+  "version": "1.3.0",
   "type": "module",
   "private": true,
   "description": "零知识强加密个人密码数据库 (支持极空间NAS私有化部署、多端同步与GitHub更新)",
@@ -9,12 +9,21 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "test": "node tests/test-crypto.js && node tests/test-audit-totp.js && node tests/test-secondary-auth.js && node tests/test-advanced-features.js && node tests/test-sync-protocol.js",
+    "test": "node tests/test-crypto.js && node tests/test-audit-totp.js && node tests/test-secondary-auth.js && node tests/test-advanced-features.js && node tests/test-sync-protocol.js && node tests/test-platform-versions.js",
     "desktop": "npm run build && electron electron/main.cjs",
     "desktop:refresh": "npm run build && electron electron/main.cjs --safevault-refresh",
+    "version:sync": "node scripts/sync-mobile-version.mjs",
+    "mobile:sync": "npm run build && npm run version:sync && cap sync",
+    "android:sync": "npm run build && npm run version:sync && cap sync android",
+    "android:open": "cap open android",
+    "ios:sync": "npm run build && npm run version:sync && cap sync ios",
+    "ios:open": "cap open ios",
     "docs:build": "python docs/generate_design_doc.py"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
     "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",
     "react": "^18.3.1",
@@ -22,6 +31,8 @@
     "tailwind-merge": "^2.3.0"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.2",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

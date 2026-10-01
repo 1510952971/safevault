@@ -55,11 +55,37 @@ textarea {
 @media (max-width: 640px) {
   body {
     background-size: 34px 34px;
+    overscroll-behavior-y: none;
   }
 
   .tactical-border {
     border-radius: 8px;
   }
+
+  button,
+  select,
+  input:not([type='checkbox']):not([type='radio']) {
+    min-height: 40px;
+  }
+}
+
+.mobile-safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.mobile-bottom-nav {
+  padding-bottom: max(0.4rem, env(safe-area-inset-bottom, 0px));
+}
+
+.mobile-nav-item {
+  display: flex;
+  min-height: 52px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 10px;
+  font-weight: 600;
 }
 
 @media (prefers-reduced-motion: reduce) {

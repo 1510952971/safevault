@@ -22,13 +22,10 @@ export const VaultOverview: React.FC<VaultOverviewProps> = ({
 }) => {
   return (
     <div className="relative bg-white border border-slate-200 rounded-lg p-5 shadow-tactical-sm overflow-hidden">
-      {/* 背景战术雷达弧线与工程编号装饰 */}
+      {/* 背景战术雷达弧线装饰 */}
       <div className="absolute -top-10 right-4 w-48 h-48 rounded-full border border-slate-200 pointer-events-none hidden md:block">
         <div className="absolute inset-2 rounded-full border border-dashed border-slate-300" />
         <div className="absolute inset-6 rounded-full border-2 border-brand-lime border-t-transparent border-l-transparent transform rotate-45" />
-        <div className="absolute top-12 right-12 text-[10px] font-mono text-slate-400">
-          密库 #0027
-        </div>
       </div>
 
       {/* 小节标题 与 搜索栏 */}

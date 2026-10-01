@@ -1,0 +1,9 @@
+<svg width="2732" height="2732" viewBox="0 0 2732 2732" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="2732" height="2732" fill="#f5f6f8"/>
+  <rect x="1046" y="1046" width="640" height="640" rx="140" fill="#090d16"/>
+  <path d="M1276 1316V1256C1276 1206.3 1316.3 1166 1366 1166C1415.7 1166 1456 1206.3 1456 1256V1316" stroke="#c8f135" stroke-width="40" stroke-linecap="round"/>
+  <path d="M1216 1296H1516V1416C1516 1501 1366 1566 1366 1566C1366 1566 1216 1501 1216 1416Z" fill="#111827" stroke="#c8f135" stroke-width="25" stroke-linejoin="round"/>
+  <circle cx="1366" cy="1391" r="23" fill="#c8f135"/>
+  <rect x="1353" y="1414" width="26" height="50" rx="13" fill="#c8f135"/>
+  <text x="1366" y="1805" text-anchor="middle" font-family="Arial, sans-serif" font-size="92" font-weight="700" fill="#0f172a">SafeVault</text>
+</svg>
