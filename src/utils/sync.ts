@@ -21,6 +21,21 @@ export interface NasSyncConfig {
   remoteVersion?: number;   // 最近一次确认的云端版本，用于防止旧设备覆盖新数据
 }
 
+export const DEFAULT_NAS_SERVER_URL = 'http://192.168.5.134:18088';
+
+/**
+ * 桌面端默认连接固定的家庭 NAS；从 NAS 网页或远程代理访问时跟随当前站点。
+ */
+export function getDefaultNasServerUrl(): string {
+  if (typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
+    const hostname = window.location.hostname.toLowerCase();
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return window.location.origin;
+    }
+  }
+  return DEFAULT_NAS_SERVER_URL;
+}
+
 export interface NasBackupSummary {
   id: string;
   version: number;

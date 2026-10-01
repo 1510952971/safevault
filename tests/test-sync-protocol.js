@@ -109,9 +109,9 @@ async function runTests() {
   const verRes = await makeRequest({ host: '127.0.0.1', port: TEST_PORT, path: '/api/version', method: 'GET' });
   assert.strictEqual(verRes.status, 200);
   assert.strictEqual(verRes.body.success, true);
-  assert.strictEqual(verRes.body.version, '1.2.4');
-  assert.strictEqual(verRes.body.serverVersion, '1.2.4');
-  assert.strictEqual(verRes.body.frontendVersion, '1.2.4');
+  assert.strictEqual(verRes.body.version, '1.2.5');
+  assert.strictEqual(verRes.body.serverVersion, '1.2.5');
+  assert.strictEqual(verRes.body.frontendVersion, '1.2.5');
   assert.strictEqual(verRes.body.versionsMatch, true, 'NAS 前后端构建版本必须一致');
 
   // 注册

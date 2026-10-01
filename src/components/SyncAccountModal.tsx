@@ -33,7 +33,8 @@ import {
   NasBackupSummary,
   mergeVaultItems,
   getDeviceIdentifier,
-  normalizeServerUrl
+  normalizeServerUrl,
+  getDefaultNasServerUrl
 } from '../utils/sync';
 import { VaultMeta, DecryptedVaultItem } from '../types/vault';
 import { encryptVaultItem, decryptAllVaultItems } from '../utils/crypto';
@@ -64,7 +65,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
 
   // 输入表单状态
-  const [serverUrl, setServerUrl] = useState('');
+  const [serverUrl, setServerUrl] = useState(getDefaultNasServerUrl);
   const [username, setUsername] = useState('');
   const [masterPassword, setMasterPassword] = useState('');
   const [isAutoSync, setIsAutoSync] = useState(true);
@@ -135,9 +136,9 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
       } else {
         // 若当前处于 NAS 容器托管的网页下，自动预填当前 origin
         if (window.location.port === '8088' || window.location.pathname.startsWith('/')) {
-          setServerUrl(window.location.origin);
+          setServerUrl(getDefaultNasServerUrl());
         } else {
-          setServerUrl('http://192.168.1.100:8088');
+          setServerUrl(getDefaultNasServerUrl());
         }
       }
     }
@@ -857,7 +858,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                   required
                   value={serverUrl}
                   onChange={(e) => setServerUrl(e.target.value)}
-                  placeholder="例如: http://192.168.1.100:8088 或 极空间远程网址"
+                  placeholder="例如: http://192.168.5.134:18088 或极空间远程网址"
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 font-mono text-xs focus:border-emerald-500 focus:outline-none"
                 />
                 {healthStatus && (

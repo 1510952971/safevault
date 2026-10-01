@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { calculatePasswordStrength } from '../utils/crypto';
 import { SafeVaultLogo } from './SafeVaultLogo';
-import { checkNasHealth, normalizeServerUrl } from '../utils/sync';
+import { checkNasHealth, getDefaultNasServerUrl, normalizeServerUrl } from '../utils/sync';
 import { CURRENT_APP_VERSION } from '../utils/updateChecker';
 
 export interface MasterAuthModalProps {
@@ -96,12 +96,7 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
   // 高级连接设置（可折叠）
   const [showAdvanced, setShowAdvanced] = useState(false);
   const usernameInputRef = useRef<HTMLInputElement>(null);
-  const [customServerUrl, setCustomServerUrl] = useState(() => {
-    if (typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
-      return window.location.origin;
-    }
-    return '';
-  });
+  const [customServerUrl, setCustomServerUrl] = useState(getDefaultNasServerUrl);
 
   // 防暴力破解状态 (基于 sessionStorage 跨刷新持久化)
   const [failedAttempts, setFailedAttempts] = useState<number>(() => getStoredRateLimit().failedCount);
@@ -132,13 +127,8 @@ export const MasterAuthModal: React.FC<MasterAuthModalProps> = ({
   // 显示当前页面实际连接到的 NAS 服务版本，便于确认 Docker 是否真的完成更新。
   useEffect(() => {
     let active = true;
-    if (typeof window === 'undefined' || !window.location.protocol.startsWith('http')) {
-      setNasVersion(null);
-      return () => { active = false; };
-    }
-
     setNasVersion('检测中');
-    checkNasHealth(window.location.origin).then((health) => {
+    checkNasHealth(getDefaultNasServerUrl()).then((health) => {
       if (!active) return;
       setNasVersion(health.success && health.version ? `v${health.version.replace(/^v/i, '')}` : '未连接');
     });
