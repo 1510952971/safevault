@@ -32,7 +32,13 @@ jobs:
         run: |
           sed -i 's/\r$//' gradlew
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+          set -o pipefail
+          ./gradlew --no-daemon assembleDebug 2>&1 | tee ../gradle-build.log
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-Gradle-Log-${{ github.run_id }}
+          path: gradle-build.log
       - uses: actions/upload-artifact@v4
         with:
           name: SafeVault-Android-${{ github.ref_name }}
