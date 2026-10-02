@@ -20,7 +20,8 @@ jobs:
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: 17
+          # Capacitor 8 and its Android library compile with Java 21 bytecode.
+          java-version: 21
       - name: Install Android SDK 36
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
