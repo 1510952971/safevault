@@ -22,7 +22,10 @@ services:
       - ./data:/app/data
       - ./backup:/app/backup
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8088/api/version').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      # The application requires HTTPS when it trusts the reverse proxy.  The
+      # health probe must model Caddy's forwarded protocol or Caddy will never
+      # start because it waits for this container to become healthy.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8088/api/version',{headers:{'x-forwarded-proto':'https'}}).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 5
