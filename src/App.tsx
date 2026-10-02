@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { VaultMeta, EncryptedVaultItem, DecryptedVaultItem, ToastNotification, VaultBackupFile } from './types/vault';
 import {
   initializeVaultMeta,
@@ -55,6 +56,7 @@ import { ThemePickerModal } from './components/ThemePickerModal';
 import { applyTheme, loadTheme, ThemeId } from './utils/theme';
 
 export const App: React.FC = () => {
+  const isAndroidNative = Capacitor.getPlatform() === 'android';
   // 金库核心状态
   const [vaultMeta, setVaultMeta] = useState<VaultMeta | null>(null);
   const [masterKey, setMasterKey] = useState<CryptoKey | null>(null);
@@ -1130,7 +1132,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div data-theme={theme} className="safevault-app-shell h-screen overflow-hidden flex flex-col bg-[#F5F6F8] text-slate-900 selection:bg-brand-lime selection:text-black">
+    <div data-theme={theme} className={`safevault-app-shell h-screen overflow-hidden flex flex-col bg-[#F5F6F8] text-slate-900 selection:bg-brand-lime selection:text-black ${isAndroidNative ? 'platform-android' : ''}`}>
       {/* 顶部导航 */}
       <Header
         isLocked={isLocked}

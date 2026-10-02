@@ -73,6 +73,18 @@ textarea {
   padding-top: env(safe-area-inset-top, 0px);
 }
 
+/* Capacitor Android 的部分刘海/状态栏组合不会正确回传 safe-area-inset-top。
+   为抽屉标题保留明确的状态栏缓冲区，避免“安全/分类”标题被系统栏覆盖。 */
+.platform-android .mobile-safe-top {
+  padding-top: max(env(safe-area-inset-top, 0px), 28px);
+}
+
+.platform-android .android-safe-overlay-header {
+  min-height: calc(3rem + 28px);
+  height: auto;
+  padding-top: max(env(safe-area-inset-top, 0px), 28px);
+}
+
 .mobile-bottom-nav {
   padding-bottom: max(0.4rem, env(safe-area-inset-bottom, 0px));
 }

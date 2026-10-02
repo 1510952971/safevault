@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { createPortal } from 'react-dom';
 import {
   Clock,
@@ -64,6 +65,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenUpdateModal,
   onOpenTheme
 }) => {
+  const isAndroidNative = Capacitor.getPlatform() === 'android';
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
@@ -158,25 +160,27 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* 超时自动锁屏倒计时与配置 */}
-            <div
-              className="flex items-center gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200/80 border border-slate-200 text-xs font-mono text-slate-700 transition-colors whitespace-nowrap shrink-0"
-              title="自动锁屏倒计时，点击可修改"
-            >
-              <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-              <span className="font-bold text-slate-900">{formatTimer(remainingLockSeconds)}</span>
-              <span className="text-slate-300">/</span>
-              <select
-                value={lockTimeoutMinutes}
-                onChange={(e) => onChangeLockTimeout(Number(e.target.value))}
-                className="bg-transparent text-xs font-mono text-slate-700 font-semibold cursor-pointer focus:outline-none"
+            {!isAndroidNative && (
+              <div
+                className="flex items-center gap-1.5 p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200/80 border border-slate-200 text-xs font-mono text-slate-700 transition-colors whitespace-nowrap shrink-0"
+                title="自动锁屏倒计时，点击可修改"
               >
-                <option value={1}>1分</option>
-                <option value={3}>3分</option>
-                <option value={5}>5分</option>
-                <option value={15}>15分</option>
-                <option value={30}>30分</option>
-              </select>
-            </div>
+                <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span className="font-bold text-slate-900">{formatTimer(remainingLockSeconds)}</span>
+                <span className="text-slate-300">/</span>
+                <select
+                  value={lockTimeoutMinutes}
+                  onChange={(e) => onChangeLockTimeout(Number(e.target.value))}
+                  className="bg-transparent text-xs font-mono text-slate-700 font-semibold cursor-pointer focus:outline-none"
+                >
+                  <option value={1}>1分</option>
+                  <option value={3}>3分</option>
+                  <option value={5}>5分</option>
+                  <option value={15}>15分</option>
+                  <option value={30}>30分</option>
+                </select>
+              </div>
+            )}
 
             {/* 当前登录账号状态 / 极空间同步入口 */}
             {onOpenSyncModal && (

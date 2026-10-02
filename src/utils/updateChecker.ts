@@ -8,9 +8,19 @@
  */
 
 import packageInfo from '../../package.json';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
 export const CURRENT_APP_VERSION = `v${packageInfo.version}`;
 export const DEFAULT_GITHUB_REPO = '1510952971/safevault';
+
+interface SafeVaultUpdaterPlugin {
+  installApk(options: { url: string; fileName?: string }): Promise<{
+    started: boolean;
+    message?: string;
+  }>;
+}
+
+const SafeVaultUpdater = registerPlugin<SafeVaultUpdaterPlugin>('SafeVaultUpdater');
 
 export interface ReleaseAsset {
   name: string;
@@ -131,16 +141,81 @@ export async function checkForGitHubUpdate(
   }
 }
 
+function openExternalDownload(asset: ReleaseAsset): void {
+  if (typeof window === 'undefined') return;
+  window.open(asset.downloadUrl, '_blank', 'noopener,noreferrer');
+}
+
+function isElectronRuntime(): boolean {
+  return typeof navigator !== 'undefined' && /Electron\//i.test(navigator.userAgent);
+}
+
+function findAsset(assets: ReleaseAsset[], predicate: (asset: ReleaseAsset) => boolean): ReleaseAsset | undefined {
+  return assets.find(predicate);
+}
+
 /**
- * 应用自身不能安全替换正在运行的 Electron 程序或 Docker 容器。
- * 返回明确的平台更新说明，避免把“修改显示版本”误报为真实升级。
+ * 按运行平台开始更新：Android 由原生插件下载并交给系统安装器，桌面/NAS/iOS
+ * 打开对应的官方安装包。任何平台都不修改 data 目录，也不把“版本显示变化”当作更新成功。
  */
 export async function performSystemUpdate(
   targetVersion: string,
-  _downloadUrl?: string
+  assets: ReleaseAsset[] = []
 ): Promise<{ success: boolean; message: string; newVersion?: string }> {
+  const platform = Capacitor.getPlatform();
+
+  if (platform === 'android') {
+    const apk = findAsset(assets, (asset) => asset.name.toLowerCase().endsWith('.apk'));
+    if (!apk) return { success: false, message: `${targetVersion} 没有可用的 Android APK 安装包。` };
+    try {
+      const result = await SafeVaultUpdater.installApk({
+        url: apk.downloadUrl,
+        fileName: apk.name
+      });
+      return {
+        success: Boolean(result?.started),
+        newVersion: targetVersion,
+        message: result?.message || '已下载 APK，正在打开系统安装确认。'
+      };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Android APK 下载或安装启动失败。'
+      };
+    }
+  }
+
+  if (platform === 'ios') {
+    const iosPackage = findAsset(assets, (asset) => /ios/i.test(asset.name));
+    if (iosPackage) openExternalDownload(iosPackage);
+    return {
+      success: Boolean(iosPackage),
+      newVersion: targetVersion,
+      message: iosPackage
+        ? '已打开 iOS 构建包下载。真机版本不能由 App 静默替换，请通过 TestFlight/App Store 安装；该 ZIP 仅用于 Xcode 模拟器。'
+        : `${targetVersion} 没有可用的 iOS 构建包。`
+    };
+  }
+
+  if (isElectronRuntime()) {
+    const desktopPackage = findAsset(assets, (asset) => /windows.*\.zip$/i.test(asset.name));
+    if (desktopPackage) openExternalDownload(desktopPackage);
+    return {
+      success: Boolean(desktopPackage),
+      newVersion: targetVersion,
+      message: desktopPackage
+        ? '已开始下载 Windows 桌面安装包。下载完成后解压覆盖客户端目录，再运行“更新并启动桌面客户端.bat”重启；data 目录不要覆盖。'
+        : `${targetVersion} 没有可用的 Windows 桌面安装包。`
+    };
+  }
+
+  const nasPackage = findAsset(assets, (asset) => /nas.*\.zip$/i.test(asset.name));
+  if (nasPackage) openExternalDownload(nasPackage);
   return {
-    success: false,
-    message: `已检测到 ${targetVersion}。桌面端请运行“更新并启动桌面客户端.bat”；极空间端请生成并覆盖最新部署包后重启容器。data 目录必须保留。`
+    success: Boolean(nasPackage),
+    newVersion: targetVersion,
+    message: nasPackage
+      ? '已开始下载 NAS 部署包。请仅替换 dist/server 和部署文件，保留 data 后重启容器。'
+      : `${targetVersion} 没有可用的 NAS 部署包。`
   };
 }

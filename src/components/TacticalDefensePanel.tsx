@@ -1,4 +1,5 @@
 import React from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Clock, Cpu, AlertTriangle, CopyCheck, KeyRound, EyeOff, Pin, PinOff, ChevronRight, BookOpen } from 'lucide-react';
 import { CURRENT_APP_VERSION } from '../utils/updateChecker';
 
@@ -52,6 +53,7 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
   onOpenUserManual
 }) => {
   const hasRisk = weakCount > 0 || reusedCount > 0;
+  const isAndroidNative = Capacitor.getPlatform() === 'android';
 
   const formatTimer = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -102,10 +104,14 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
               <span>自动锁屏</span>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              <span className="font-mono font-bold text-slate-800">
-                {formatTimer(remainingLockSeconds)}
-              </span>
-              <span className="text-slate-300">/</span>
+              {!isAndroidNative && (
+                <>
+                  <span className="font-mono font-bold text-slate-800">
+                    {formatTimer(remainingLockSeconds)}
+                  </span>
+                  <span className="text-slate-300">/</span>
+                </>
+              )}
               <select
                 value={lockTimeoutMinutes}
                 onChange={(e) => onChangeLockTimeout(Number(e.target.value))}

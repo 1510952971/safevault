@@ -345,8 +345,9 @@ export const USER_MANUAL_SECTIONS: ManualSection[] = [
         heading: '桌面端更新步骤',
         steps: [
           '确保重要数据已同步到 NAS，并导出最新 .safevault.json。',
-          '关闭正在运行的桌面客户端。',
-          '运行“更新并启动桌面客户端.bat”，脚本会拉取最新代码、构建并重新启动。',
+          '在“检查 GitHub 版本更新”弹窗点击“下载并开始更新”；Windows 会下载对应桌面 ZIP。',
+          '关闭正在运行的桌面客户端，解压新包覆盖程序文件，不要覆盖 data 目录。',
+          '运行“更新并启动桌面客户端.bat”重启并加载新版本；该脚本会校验代码、构建并启动。',
           '进入安全审计栏检查版本，登录后核对条目数量和自动同步状态。'
         ]
       },
@@ -368,7 +369,8 @@ export const USER_MANUAL_SECTIONS: ManualSection[] = [
           'Android 与 iOS 使用和 Web、桌面端相同的加密与同步核心，登录同一 NAS 账号后自动获取数据。',
           '手机端采用底部主导航、中央新增按钮、单列凭据卡，以及抽屉式分类和安全中心。',
           '局域网默认连接 http://192.168.5.134:18088；外网必须使用稳定 HTTPS 地址。',
-          'Android 安装包由 android 工程构建；iOS 安装包必须在 macOS 的 Xcode 中签名和归档。',
+          'Android 点击更新后会下载 APK 并打开系统安装器；首次可能需要在系统设置中允许 SafeVault 安装未知应用，然后确认安装。',
+          'iOS 不能由 App 自行替换正在运行的 App；更新请通过 TestFlight/App Store，GitHub 中的 iOS ZIP 仅供 Xcode 模拟器使用。',
           '每次发布前执行 npm run mobile:sync，程序会自动同步网页资源和 Android、iOS 版本号。'
         ]
       },

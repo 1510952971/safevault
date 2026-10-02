@@ -54,9 +54,9 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
     setIsUpdateDone(false);
     setUpdateStep(1);
     setUpdateMessage(`正在生成 ${targetVersion} 的平台更新指引...`);
-    const updateResult = await performSystemUpdate(targetVersion);
-    setUpdateStep(3);
-    setIsUpdateDone(true);
+    const updateResult = await performSystemUpdate(targetVersion, result?.assets || []);
+    setUpdateStep(updateResult.success ? 3 : 2);
+    setIsUpdateDone(updateResult.success);
     setUpdateMessage(updateResult.message);
   };
 
@@ -181,7 +181,7 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
                         className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold rounded-md shadow-md text-xs flex items-center justify-center gap-2 transition-all"
                       >
                         <Sparkles className="w-4 h-4 text-amber-300" />
-                        <span>查看此版本的安全更新方式</span>
+                        <span>下载并开始更新</span>
                       </button>
                     </div>
                   )}
