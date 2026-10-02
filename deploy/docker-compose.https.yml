@@ -1,0 +1,22 @@
+services:
+  safevault:
+    # 与 HTTPS 反向代理组合启动时，应用只信任来自 Caddy/Cloudflare 的
+    # X-Forwarded-Proto，并拒绝绕过代理的明文 HTTP 请求。
+    environment:
+      REQUIRE_HTTPS: "true"
+      TRUST_PROXY: "true"
+      CORS_ORIGIN: "https://safevault.eyeme.online"
+
+  # 独立 HTTPS 反向代理，适配已经在极空间 Docker 中运行的 safevault 容器。
+  # 启动前请确保 NAS 主机的 80/443 端口未被其他容器占用。
+  safevault-caddy:
+    image: caddy:2-alpine
+    container_name: safevault-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-data:/data
+      - ./caddy-config:/config

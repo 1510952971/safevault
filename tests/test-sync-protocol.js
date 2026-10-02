@@ -21,7 +21,7 @@ console.log('--- 开始极空间 NAS 零知识同步协议与版本更新单元�
 // 1. 模拟客户端 AuthHash 派生算法 (使用 Node.js crypto 实现与 Web Crypto API PBKDF2 一致的逻辑)
 function deriveAuthHashNode(username, masterPassword, saltHex) {
   const authSalt = `safevault:nas:auth:${username.toLowerCase()}:${saltHex}`;
-  const derived = crypto.pbkdf2Sync(masterPassword, authSalt, 10000, 32, 'sha256');
+  const derived = crypto.pbkdf2Sync(masterPassword, authSalt, 600000, 32, 'sha256');
   return derived.toString('hex');
 }
 
@@ -120,6 +120,7 @@ async function runTests() {
   assert.strictEqual(verRes.body.frontendVersion, currentAppVersion);
   assert.strictEqual(verRes.body.versionsMatch, true, 'NAS 前后端构建版本必须一致');
   assert.strictEqual(verRes.body.disasterBackupReady, true, '独立灾备必须在服务启动时就绪');
+  assert.strictEqual(verRes.headers['x-content-type-options'], 'nosniff', 'API 必须下发基础安全响应头');
 
   // 注册
   const testUser = 'zspace_tester';
@@ -207,18 +208,36 @@ async function runTests() {
   // [5/5] 测试密文推送 (Push) 与拉取 (Pull) 往返完整性
   console.log('[5/5] 测试加密金库密文包推送 (Push)、状态查询与拉取 (Pull)...');
   const mockVaultMeta = {
-    salt: 'TEST_SALT_BASE64==',
-    testCipher: 'CIPHER_TEST_TOKEN==',
-    testIv: 'TEST_IV_BASE64==',
+    salt: 'AAAAAAAAAAAAAAAAAAAAAA==',
+    testCipher: 'AAAAAAAAAAAAAAAAAAAAAA==',
+    testIv: 'AAAAAAAAAAAAAAAA',
     hasSecondaryPassword: true,
     lockTimeoutMinutes: 5,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
   const mockEncryptedItems = [
-    { id: 'item-001', ciphertext: 'ENCRYPTED_PAYLOAD_1==', iv: 'IV_1==', updatedAt: new Date().toISOString() },
-    { id: 'item-002', ciphertext: 'ENCRYPTED_PAYLOAD_2==', iv: 'IV_2==', updatedAt: new Date().toISOString() }
+    { encryptionVersion: 3, id: 'item-001', encryptedPayload: 'AAAAAAAAAAAAAAAAAAAAAA==', iv: 'AAAAAAAAAAAAAAAA' },
+    { encryptionVersion: 3, id: 'item-002', encryptedPayload: 'AAAAAAAAAAAAAAAAAAAAAA==', iv: 'AAAAAAAAAAAAAAAA' }
   ];
+
+  // v3 外壳携带明文元数据时必须在服务器边界被拒绝。
+  const invalidV3Push = await makeRequest(
+    {
+      host: '127.0.0.1',
+      port: TEST_PORT,
+      path: '/api/sync/push',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: tokenCookie }
+    },
+    {
+      vaultMeta: mockVaultMeta,
+      encryptedItems: [{ ...mockEncryptedItems[0], title: '不应落盘的明文标题' }],
+      deviceName: 'Validation-Test',
+      clientVersion: 1
+    }
+  );
+  assert.strictEqual(invalidV3Push.status, 400, 'v3 明文元数据必须被服务端拒绝');
 
   // 推送 Push
   const pushRes = await makeRequest(
@@ -242,11 +261,12 @@ async function runTests() {
   assert.strictEqual(pushRes.status, 200);
   assert.strictEqual(pushRes.body.success, true);
   assert.strictEqual(pushRes.body.itemsCount, 2);
+  assert.match(pushRes.body.dataHash, /^[a-f0-9]{64}$/, '推送响应必须返回密文指纹');
 
   // 第二次推送前会自动生成 v2 历史快照；版本锁允许基于 v2 的设备更新。
   const updatedMockItems = [
     ...mockEncryptedItems,
-    { id: 'item-003', ciphertext: 'ENCRYPTED_PAYLOAD_3==', iv: 'IV_3==', updatedAt: new Date().toISOString() }
+    { encryptionVersion: 3, id: 'item-003', encryptedPayload: 'AAAAAAAAAAAAAAAAAAAAAA==', iv: 'AAAAAAAAAAAAAAAA' }
   ];
   const secondPush = await makeRequest(
     {
@@ -288,6 +308,7 @@ async function runTests() {
   assert.strictEqual(statusRes.body.hasData, true);
   assert.strictEqual(statusRes.body.version, 3);
   assert.strictEqual(statusRes.body.backupCount, 1);
+  assert.strictEqual(statusRes.body.dataHash, secondPush.body.dataHash, '状态指纹必须与当前密文一致');
 
   // 历史快照列表与回滚：回滚前再保护当前 v3，回滚后生成新版本 v4。
   const backupsRes = await makeRequest({
@@ -324,10 +345,48 @@ async function runTests() {
   });
   assert.strictEqual(pullRes.status, 200);
   assert.strictEqual(pullRes.body.success, true);
-  assert.strictEqual(pullRes.body.vaultMeta.testCipher, 'CIPHER_TEST_TOKEN==');
+  assert.strictEqual(pullRes.body.vaultMeta.testCipher, 'AAAAAAAAAAAAAAAAAAAAAA==');
   assert.strictEqual(pullRes.body.version, 4);
   assert.strictEqual(pullRes.body.encryptedItems.length, 2);
-  assert.strictEqual(pullRes.body.encryptedItems[0].ciphertext, 'ENCRYPTED_PAYLOAD_1==');
+  assert.strictEqual(pullRes.body.encryptedItems[0].encryptedPayload, 'AAAAAAAAAAAAAAAAAAAAAA==');
+
+  // 主密码/认证摘要与新密文必须作为一个版本原子切换。
+  const atomicChangePass = 'AtomicChangedPass#2026';
+  const atomicChangeHash = deriveAuthHashNode(testUser, atomicChangePass, testSalt);
+  const atomicChangeRes = await makeRequest(
+    {
+      host: '127.0.0.1',
+      port: TEST_PORT,
+      path: '/api/auth/change-password',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: tokenCookie }
+    },
+    {
+      authHash: atomicChangeHash,
+      vaultMeta: mockVaultMeta,
+      encryptedItems: mockEncryptedItems,
+      clientVersion: 4,
+      deviceName: 'Atomic-Change-Test'
+    }
+  );
+  assert.strictEqual(atomicChangeRes.status, 200, '原子改密应成功提交');
+  assert.strictEqual(atomicChangeRes.body.version, 5);
+
+  const atomicChallenge = await makeRequest({
+    host: '127.0.0.1',
+    port: TEST_PORT,
+    path: `/api/auth/challenge?username=${testUser}`,
+    method: 'GET'
+  });
+  const atomicLogin = await makeRequest(
+    { host: '127.0.0.1', port: TEST_PORT, path: '/api/auth/login', method: 'POST', headers: { 'Content-Type': 'application/json' } },
+    {
+      username: testUser,
+      challenge: atomicChallenge.body.challenge,
+      challengeResponse: crypto.createHmac('sha256', atomicChangeHash).update(atomicChallenge.body.challenge).digest('hex')
+    }
+  );
+  assert.strictEqual(atomicLogin.status, 200, '原子改密后的新认证摘要应立即生效');
 
   const latestDisasterBackup = path.join(TEST_BACKUP_DIR, 'database', 'vault-store-latest.json');
   assert.ok(fs.existsSync(latestDisasterBackup), '完整数据库必须写入独立灾备目录');

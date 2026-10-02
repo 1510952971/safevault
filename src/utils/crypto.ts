@@ -2,7 +2,7 @@
  * SafeVault 零知识底层加密引擎
  * 严格遵循 security-guardian 规范：
  * - Web Crypto API (SubtleCrypto)
- * - PBKDF2-SHA256 (100,000 轮哈希迭代)
+ * - PBKDF2-SHA256 (新金库 600,000 轮；兼容旧金库最低 100,000 轮)
  * - AES-GCM-256 (每次使用 12 字节强伪随机 IV)
  * - 绝不明文输出敏感信息
  */
@@ -17,9 +17,14 @@ import {
 
 const LEGACY_PBKDF2_ITERATIONS = 100000;
 export const CURRENT_PBKDF2_ITERATIONS = 600000;
+const MAX_PBKDF2_ITERATIONS = 2_000_000;
 const TEST_TOKEN_CONST = 'SAFEVAULT_AUTH_VERIFIED_TOKEN';
+const VAULT_META_VERSION = '2.0';
+const ITEM_ENCRYPTION_VERSION = 3 as const;
+const VAULT_KEY_WRAP_AAD = 'SafeVault:VaultKey:Wrap:v2';
+const VAULT_TEST_AAD = 'SafeVault:VaultMeta:Test:v2';
 
-function getVaultItemAssociatedData(item: {
+function getLegacyVaultItemAssociatedData(item: {
   id: string; title: string; category: string; website?: string;
   isFavorite?: boolean; tags?: string[]; isDeleted?: boolean; deletedAt?: string;
   createdAt: string; updatedAt: string;
@@ -36,6 +41,57 @@ function getVaultItemAssociatedData(item: {
     createdAt: item.createdAt,
     updatedAt: item.updatedAt
   }));
+}
+
+function getVaultItemAssociatedDataV3(id: string): Uint8Array {
+  return textEncoder.encode(`SafeVault:VaultItem:v3:${id}`);
+}
+
+function getRandomBytes(length: number): Uint8Array {
+  return window.crypto.getRandomValues(new Uint8Array(length));
+}
+
+async function importVaultDataKey(rawKey: Uint8Array): Promise<CryptoKey> {
+  return window.crypto.subtle.importKey(
+    'raw',
+    rawKey as BufferSource,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function createVaultDataKey(): Promise<{ key: CryptoKey; raw: Uint8Array }> {
+  const raw = getRandomBytes(32);
+  return { key: await importVaultDataKey(raw), raw };
+}
+
+async function wrapVaultDataKey(kek: CryptoKey, rawVaultKey: Uint8Array): Promise<{ ciphertext: string; iv: string }> {
+  const iv = getRandomBytes(12);
+  const ciphertext = await window.crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: iv as BufferSource, additionalData: textEncoder.encode(VAULT_KEY_WRAP_AAD) },
+    kek,
+    rawVaultKey as BufferSource
+  );
+  return { ciphertext: bufferToBase64(new Uint8Array(ciphertext)), iv: bufferToBase64(iv) };
+}
+
+async function unwrapVaultDataKey(kek: CryptoKey, wrappedVaultKey: string, wrappedVaultKeyIv: string): Promise<CryptoKey> {
+  const raw = await window.crypto.subtle.decrypt(
+    {
+      name: 'AES-GCM',
+      iv: base64ToBuffer(wrappedVaultKeyIv) as BufferSource,
+      additionalData: textEncoder.encode(VAULT_KEY_WRAP_AAD)
+    },
+    kek,
+    base64ToBuffer(wrappedVaultKey) as BufferSource
+  );
+  const rawBytes = new Uint8Array(raw);
+  try {
+    return await importVaultDataKey(rawBytes);
+  } finally {
+    rawBytes.fill(0);
+  }
 }
 
 // Uint8Array 与 Base64 互转
@@ -70,64 +126,79 @@ export async function deriveKeyFromMasterPassword(
   salt: Uint8Array,
   iterations = CURRENT_PBKDF2_ITERATIONS
 ): Promise<CryptoKey> {
+  if (!Number.isInteger(iterations) || iterations < LEGACY_PBKDF2_ITERATIONS || iterations > MAX_PBKDF2_ITERATIONS) {
+    throw new Error('金库 KDF 参数无效');
+  }
   const passwordBuffer = textEncoder.encode(masterPassword);
 
-  // 导入原始密码为 key_material
-  const keyMaterial = await window.crypto.subtle.importKey(
-    'raw',
-    passwordBuffer,
-    { name: 'PBKDF2' },
-    false,
-    ['deriveKey']
-  );
+  try {
+    // 导入原始密码为 key_material
+    const keyMaterial = await window.crypto.subtle.importKey(
+      'raw',
+      passwordBuffer,
+      { name: 'PBKDF2' },
+      false,
+      ['deriveKey']
+    );
 
-  // 派生 AES-GCM 密钥
-  return await window.crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt: salt as BufferSource,
-      iterations,
-      hash: 'SHA-256'
-    },
-    keyMaterial,
-    { name: 'AES-GCM', length: 256 },
-    false, // 不可导出，保护内存
-    ['encrypt', 'decrypt']
-  );
+    // 派生 AES-GCM 密钥
+    return await window.crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: salt as BufferSource,
+        iterations,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false, // 不可导出，保护内存
+      ['encrypt', 'decrypt']
+    );
+  } finally {
+    passwordBuffer.fill(0);
+  }
 }
 
 /**
- * 首次初始化金库：生成随机盐值、派生密钥并生成测试校验密文
+ * 首次初始化金库：主密码只派生 KEK，用于包裹随机生成的金库数据密钥。
+ * 数据密钥与主密码解耦，改主密码时可以重新包裹/重建金库而不让服务器接触明文。
  */
 export async function initializeVaultMeta(
   masterPassword: string
 ): Promise<{ meta: VaultMeta; masterKey: CryptoKey }> {
   try {
     const salt = window.crypto.getRandomValues(new Uint8Array(16));
-    const masterKey = await deriveKeyFromMasterPassword(masterPassword, salt, CURRENT_PBKDF2_ITERATIONS);
+    const kek = await deriveKeyFromMasterPassword(masterPassword, salt, CURRENT_PBKDF2_ITERATIONS);
+    const { key: vaultKey, raw: rawVaultKey } = await createVaultDataKey();
+    const wrapped = await wrapVaultDataKey(kek, rawVaultKey);
+    rawVaultKey.fill(0);
 
-    // 加密测试已知常量
-    const testIv = window.crypto.getRandomValues(new Uint8Array(12));
+    // 使用金库数据密钥加密测试常量；没有主密码就无法先解包数据密钥。
+    const testIv = getRandomBytes(12);
     const tokenBuffer = textEncoder.encode(TEST_TOKEN_CONST);
     const testCipherBuffer = await window.crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: testIv as BufferSource },
-      masterKey,
+      { name: 'AES-GCM', iv: testIv as BufferSource, additionalData: textEncoder.encode(VAULT_TEST_AAD) },
+      vaultKey,
       tokenBuffer
     );
+    tokenBuffer.fill(0);
 
     const now = new Date().toISOString();
     const meta: VaultMeta = {
-      version: '1.0',
+      version: VAULT_META_VERSION,
       salt: bufferToBase64(salt),
       testCipher: bufferToBase64(new Uint8Array(testCipherBuffer)),
       testIv: bufferToBase64(testIv),
       kdfIterations: CURRENT_PBKDF2_ITERATIONS,
+      keyEnvelopeVersion: 2,
+      wrappedVaultKey: wrapped.ciphertext,
+      wrappedVaultKeyIv: wrapped.iv,
       lockTimeoutMinutes: 3,
       createdAt: now,
       updatedAt: now
     };
 
-    return { meta, masterKey };
+    return { meta, masterKey: vaultKey };
   } catch (error) {
     console.error('金库元数据初始化失败:', error);
     throw new Error('初始化金库加密环境异常');
@@ -143,14 +214,26 @@ export async function verifyMasterPassword(
 ): Promise<{ success: boolean; masterKey: CryptoKey | null }> {
   try {
     const salt = base64ToBuffer(meta.salt);
+    const kek = await deriveKeyFromMasterPassword(masterPassword, salt, meta.kdfIterations || LEGACY_PBKDF2_ITERATIONS);
+    let masterKey: CryptoKey;
+
+    if (meta.keyEnvelopeVersion === 2 && meta.wrappedVaultKey && meta.wrappedVaultKeyIv) {
+      masterKey = await unwrapVaultDataKey(kek, meta.wrappedVaultKey, meta.wrappedVaultKeyIv);
+    } else {
+      // 兼容 v1：旧版直接用主密码派生的 AES-GCM 密钥加密条目。
+      masterKey = kek;
+    }
+
     const testIv = base64ToBuffer(meta.testIv);
     const testCipher = base64ToBuffer(meta.testCipher);
 
-    const masterKey = await deriveKeyFromMasterPassword(masterPassword, salt, meta.kdfIterations || LEGACY_PBKDF2_ITERATIONS);
-
     // 尝试解密测试 Token
     const decryptedBuffer = await window.crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: testIv as BufferSource },
+      {
+        name: 'AES-GCM',
+        iv: testIv as BufferSource,
+        ...(meta.keyEnvelopeVersion === 2 ? { additionalData: textEncoder.encode(VAULT_TEST_AAD) } : {})
+      },
       masterKey,
       testCipher as BufferSource
     );
@@ -169,10 +252,10 @@ export async function verifyMasterPassword(
 /**
  * 在线无损修改主密码：
  * 1. 严格核验原主密码是否正确
- * 2. 生成全新的 16 字节随机盐值
- * 3. 基于 PBKDF2 100,000 轮派生全新 AES-GCM 256 位 CryptoKey
+ * 2. 生成全新的主密码盐值与随机金库数据密钥
+ * 3. 用新主密码重新包裹金库数据密钥
  * 4. 重新加密测试 Token
- * 5. 使用新密钥逐条重新加密当前所有凭据
+ * 5. 使用新数据密钥逐条重新加密当前所有凭据
  * 6. 返回全新 Meta、新 CryptoKey 以及新密文条目数组
  */
 export async function changeMasterPasswordAndReEncryptVault(
@@ -191,28 +274,27 @@ export async function changeMasterPasswordAndReEncryptVault(
     throw new Error('当前主密码验证失败，无法修改主密码');
   }
 
-  // 2. 生成新盐值并派生新密钥
-  const newSalt = window.crypto.getRandomValues(new Uint8Array(16));
-  const newMasterKey = await deriveKeyFromMasterPassword(newPassword, newSalt, CURRENT_PBKDF2_ITERATIONS);
-
-  // 3. 加密新验证 Token
-  const newTestIv = window.crypto.getRandomValues(new Uint8Array(12));
-  const tokenBuffer = textEncoder.encode(TEST_TOKEN_CONST);
-  const newTestCipherBuffer = await window.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: newTestIv },
-    newMasterKey,
-    tokenBuffer
-  );
-
+  // 2. 生成新的金库元数据与数据密钥。
+  const initialized = await initializeVaultMeta(newPassword);
+  const newMasterKey = initialized.masterKey;
   const now = new Date().toISOString();
   const newMeta: VaultMeta = {
-    ...currentMeta,
-    salt: bufferToBase64(newSalt),
-    testCipher: bufferToBase64(new Uint8Array(newTestCipherBuffer)),
-    testIv: bufferToBase64(newTestIv),
-    updatedAt: now,
-    kdfIterations: CURRENT_PBKDF2_ITERATIONS
+    ...initialized.meta,
+    lockTimeoutMinutes: currentMeta.lockTimeoutMinutes,
+    hasSecondaryPassword: currentMeta.hasSecondaryPassword,
+    secondarySalt: currentMeta.secondarySalt,
+    secondaryTestCipher: currentMeta.secondaryTestCipher,
+    secondaryTestIv: currentMeta.secondaryTestIv,
+    secondaryKdfIterations: currentMeta.secondaryKdfIterations,
+    createdAt: currentMeta.createdAt || now,
+    updatedAt: now
   };
+
+  // 3. initializeVaultMeta 已经用新数据密钥生成了测试 Token。
+  /*
+   * 注意：这里不尝试保留旧的 testCipher 或 wrappedVaultKey。
+   * 遗失旧主密码时，旧金库数据密钥仍不可恢复；只有已经解锁的设备可以主动重加密。
+   */
 
   // 4. 使用新密钥逐条重新加密所有条目
   const newEncryptedItems: EncryptedVaultItem[] = [];
@@ -285,51 +367,60 @@ export async function verifySecondaryPassword(
   }
 }
 
+type VaultItemEncryptionInput =
+  Omit<DecryptedVaultItem, 'id' | 'createdAt' | 'updatedAt'>
+  & Partial<Pick<DecryptedVaultItem, 'createdAt' | 'updatedAt'>>;
+
 /**
- * 加密单个密码条目（仅对敏感字段 username, password, notes 进行加密）
+ * 加密单个密码条目。
+ * v3 将标题、分类、网址、标签、删除状态、时间戳以及敏感字段统一放进
+ * AES-GCM 密文；服务器只能看到随机 id、IV 和不可读密文。
  */
 export async function encryptVaultItem(
   masterKey: CryptoKey,
-  item: Omit<DecryptedVaultItem, 'id' | 'createdAt' | 'updatedAt'>,
+  item: VaultItemEncryptionInput,
   existingId?: string
 ): Promise<EncryptedVaultItem> {
   try {
+    const now = new Date().toISOString();
+    const id = existingId || (crypto.randomUUID ? crypto.randomUUID() : `item-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
+    const createdAt = item.createdAt || now;
+    const updatedAt = item.updatedAt || now;
     const payload: EncryptedPayload = {
+      id,
+      title: item.title,
+      category: item.category,
       username: item.username,
       password: item.password,
       notes: item.notes || '',
+      website: item.website || '',
+      isFavorite: !!item.isFavorite,
+      tags: item.tags || [],
+      isDeleted: !!item.isDeleted,
+      deletedAt: item.deletedAt,
       totpSecret: item.totpSecret || '',
       customFields: item.customFields || [],
-      passwordHistory: item.passwordHistory || []
+      passwordHistory: item.passwordHistory || [],
+      createdAt,
+      updatedAt
     };
 
     const payloadBytes = textEncoder.encode(JSON.stringify(payload));
-    const iv = window.crypto.getRandomValues(new Uint8Array(12));
-    const now = new Date().toISOString();
-    const id = existingId || (crypto.randomUUID ? crypto.randomUUID() : `item-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
-    const createdAt = (item as any).createdAt || now;
-    const associatedData = getVaultItemAssociatedData({ ...item, id, createdAt, updatedAt: now });
+    const iv = getRandomBytes(12);
+    const associatedData = getVaultItemAssociatedDataV3(id);
 
     const cipherBuffer = await window.crypto.subtle.encrypt(
       { name: 'AES-GCM', iv: iv as BufferSource, additionalData: associatedData as BufferSource },
       masterKey,
       payloadBytes
     );
+    payloadBytes.fill(0);
 
     return {
-      encryptionVersion: 2,
+      encryptionVersion: ITEM_ENCRYPTION_VERSION,
       id,
-      title: item.title,
-      category: item.category,
-      website: item.website || '',
-      isFavorite: !!item.isFavorite,
-      tags: item.tags || [],
-      isDeleted: !!item.isDeleted,
-      deletedAt: item.deletedAt,
       encryptedPayload: bufferToBase64(new Uint8Array(cipherBuffer)),
-      iv: bufferToBase64(iv),
-      createdAt,
-      updatedAt: now
+      iv: bufferToBase64(iv)
     };
   } catch (err) {
     console.error('密码条目加密失败:', err);
@@ -348,28 +439,62 @@ export async function decryptVaultItem(
     const iv = base64ToBuffer(encryptedItem.iv);
     const cipherBytes = base64ToBuffer(encryptedItem.encryptedPayload);
 
-    const associatedData = getVaultItemAssociatedData(encryptedItem);
+    const isV3 = encryptedItem.encryptionVersion === ITEM_ENCRYPTION_VERSION;
     let decryptedBuffer: ArrayBuffer;
-    try {
+    if (isV3) {
       decryptedBuffer = await window.crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: iv as BufferSource, additionalData: associatedData as BufferSource },
-        masterKey, cipherBytes as BufferSource
+        { name: 'AES-GCM', iv: iv as BufferSource, additionalData: getVaultItemAssociatedDataV3(encryptedItem.id) as BufferSource },
+        masterKey,
+        cipherBytes as BufferSource
       );
-    } catch (error) {
-      // 仅兼容明确没有版本标记的历史条目；新格式禁止回退，防止 AAD 被绕过。
-      if (encryptedItem.encryptionVersion === 2) throw error;
-      decryptedBuffer = await window.crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: iv as BufferSource }, masterKey, cipherBytes as BufferSource
-      );
+    } else {
+      const legacyItem = encryptedItem as Required<Pick<EncryptedVaultItem, 'id' | 'title' | 'category' | 'createdAt' | 'updatedAt'>> & EncryptedVaultItem;
+      try {
+        decryptedBuffer = await window.crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: iv as BufferSource, additionalData: getLegacyVaultItemAssociatedData(legacyItem) as BufferSource },
+          masterKey,
+          cipherBytes as BufferSource
+        );
+      } catch (legacyAadError) {
+        // 仅兼容最早的无 AAD 格式；v2 有 AAD 的条目不允许静默降级。
+        if (encryptedItem.encryptionVersion === 2) throw legacyAadError;
+        decryptedBuffer = await window.crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: iv as BufferSource },
+          masterKey,
+          cipherBytes as BufferSource
+        );
+      }
     }
 
     const jsonText = textDecoder.decode(decryptedBuffer);
     const payload: EncryptedPayload = JSON.parse(jsonText);
 
+    if (isV3) {
+      if (payload.id !== encryptedItem.id) throw new Error('条目标识校验失败');
+      return {
+        id: encryptedItem.id,
+        title: payload.title,
+        category: payload.category,
+        website: payload.website,
+        isFavorite: !!payload.isFavorite,
+        tags: payload.tags || [],
+        isDeleted: !!payload.isDeleted,
+        deletedAt: payload.deletedAt,
+        username: payload.username,
+        password: payload.password,
+        notes: payload.notes,
+        totpSecret: payload.totpSecret,
+        customFields: payload.customFields || [],
+        passwordHistory: payload.passwordHistory || [],
+        createdAt: payload.createdAt,
+        updatedAt: payload.updatedAt
+      };
+    }
+
     return {
       id: encryptedItem.id,
-      title: encryptedItem.title,
-      category: encryptedItem.category,
+      title: encryptedItem.title || '',
+      category: encryptedItem.category || 'other',
       website: encryptedItem.website,
       isFavorite: encryptedItem.isFavorite || false,
       tags: encryptedItem.tags || [],
@@ -381,12 +506,12 @@ export async function decryptVaultItem(
       totpSecret: payload.totpSecret,
       customFields: payload.customFields || [],
       passwordHistory: payload.passwordHistory || [],
-      createdAt: encryptedItem.createdAt,
-      updatedAt: encryptedItem.updatedAt
+      createdAt: encryptedItem.createdAt || new Date(0).toISOString(),
+      updatedAt: encryptedItem.updatedAt || new Date(0).toISOString()
     };
   } catch (err) {
-    console.error('解密条目失败 (可能数据已损坏):', err);
-    throw new Error(`条目 [${encryptedItem.title}] 解密失败`);
+    console.error('解密条目失败：密文完整性校验未通过');
+    throw new Error('金库密文完整性校验失败，已拒绝加载该数据');
   }
 }
 
@@ -403,18 +528,9 @@ export async function decryptAllVaultItems(
       const decrypted = await decryptVaultItem(masterKey, item);
       results.push(decrypted);
     } catch (_err) {
-      // 容错处理：单个条目损坏不影响其他数据展示
-      results.push({
-        id: item.id,
-        title: `${item.title} (解密异常)`,
-        category: item.category,
-        username: '***',
-        password: '***',
-        website: item.website,
-        notes: '数据可能遭到篡改或密钥不匹配',
-        createdAt: item.createdAt,
-        updatedAt: item.updatedAt
-      });
+      // 安全策略：不展示部分解密结果，也不把篡改数据伪装成可用条目。
+      // 调用方收到异常后必须停止同步/加载并提示用户恢复可信备份。
+      throw new Error('金库中存在无法验证的密文条目，已停止加载以防止数据混合或覆盖');
     }
   }
   return results;

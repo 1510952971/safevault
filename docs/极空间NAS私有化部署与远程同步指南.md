@@ -69,6 +69,20 @@ docker compose -f deploy/docker-compose.yml up -d --build
    ```
 4. 复制该网址，您可以在全球任意有网络的地方通过该网址访问 SafeVault。
 
+### 方案 B：使用自己的固定域名（`safevault.eyeme.online`）
+
+如果不想依赖极空间每次生成的临时网址，可以使用自己的域名，但必须同时具备 **HTTPS 反向代理** 和 **路由器端口转发**，不能把 SafeVault 的 HTTP 端口直接暴露到公网。
+
+当前项目已提供 `deploy/Caddyfile` 与 `deploy/docker-compose.https.yml`：
+
+1. 将这两个文件放到 NAS 的 SafeVault 部署目录；Caddyfile 默认把 `safevault.eyeme.online` 代理到现有的 `192.168.5.134:18088`。
+2. 在 NAS Docker 中启动 Caddy 容器，映射 `80:80` 和 `443:443`，并持久化 `/data`、`/config` 两个目录。Caddy 会自动申请并续期证书。
+3. 在阿里云 DNS 中添加 `safevault` 的 A 记录，指向家庭网络的公网 IPv4。当前记录为 `safevault.eyeme.online → 188.253.5.29`。
+4. 在路由器端口转发中建立两条 TCP 规则：公网 `80 → 192.168.5.134:80`、公网 `443 → 192.168.5.134:443`。不要启用 DMZ 或 UPnP。
+5. 外网客户端统一使用 `https://safevault.eyeme.online`。若公网 IP 会变化，还要配置 DDNS 或使用阿里云 DNS 的动态更新；仅添加一次 A 记录不能应对 IP 变化。
+
+如果 80/443 已被其他服务占用，或运营商处于 CGNAT，固定域名方案无法直接完成，需要改用极空间远程访问或 VPN 内网穿透。
+
 ---
 
 ## 四、多端使用与数据同步指南

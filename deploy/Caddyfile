@@ -1,0 +1,8 @@
+# SafeVault 固定公网 HTTPS 入口。
+#
+# 当前极空间容器的宿主机端口是 18088，NAS 局域网地址是
+# 192.168.5.134。Caddy 与 SafeVault 同在 NAS 上运行时，直接代理到该地址。
+# 若 NAS 地址或宿主机端口改变，只需修改下面这一行。
+safevault.eyeme.online {
+    reverse_proxy 192.168.5.134:18088
+}

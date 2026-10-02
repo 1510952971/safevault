@@ -3,7 +3,7 @@
  */
 import assert from 'node:assert';
 
-const PBKDF2_ITERATIONS = 100000;
+const PBKDF2_ITERATIONS = 600000;
 const TEST_TOKEN_CONST = 'SAFEVAULT_AUTH_VERIFIED_TOKEN';
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -49,7 +49,7 @@ async function runTests() {
   console.log('[1/4] 测试 PBKDF2 密钥派生...');
   const key = await deriveKey(masterPass, salt);
   assert(key !== null, '密钥生成不应为空');
-  console.log('  ✓ PBKDF2 100,000 轮密钥派生成功');
+  console.log('  ✓ PBKDF2 600,000 轮密钥派生成功');
 
   // 2. 身份验证测试密文生成与检验
   console.log('[2/4] 测试主密码验证 Token (正向与反向防御)...');

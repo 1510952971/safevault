@@ -21,6 +21,5 @@ services:
       - BACKUP_DIR=/app/backup
       # 通过 NAS / Nginx / Caddy 的 HTTPS 反向代理访问时启用；局域网直连 HTTP 请保持 false。
       - REQUIRE_HTTPS=false
-      # 生产环境填写前端 HTTPS 域名，例如 https://vault.example.com；不要使用 *。
-      # 域名变化时，把新旧前端入口都写入，逗号分隔；同源访问无需填写。
-      - CORS_ORIGIN=https://vault.example.com,http://localhost:3000,https://localhost,capacitor://localhost
+      # 生产环境填写前端 HTTPS 域名；同源访问无需填写，但保留移动端来源。
+      - CORS_ORIGIN=https://safevault.eyeme.online,http://localhost:3000,https://localhost,capacitor://localhost

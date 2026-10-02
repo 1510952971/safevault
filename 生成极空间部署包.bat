@@ -42,6 +42,8 @@ xcopy /e /i /y "%~dp0dist" "%TARGET_DIR%\dist" >nul
 xcopy /e /i /y "%~dp0server" "%TARGET_DIR%\server" >nul
 copy /y "%~dp0package.json" "%TARGET_DIR%\" >nul
 copy /y "%~dp0deploy\docker-compose.yml" "%TARGET_DIR%\" >nul
+copy /y "%~dp0deploy\Caddyfile" "%TARGET_DIR%\" >nul
+copy /y "%~dp0deploy\docker-compose.https.yml" "%TARGET_DIR%\" >nul
 
 echo.
 echo ========================================================

@@ -9,6 +9,22 @@
 
 import { VaultMeta, EncryptedVaultItem, VaultItem } from '../types/vault';
 
+export type SyncProviderId = 'nas' | 'aws';
+
+export interface SyncEndpointConfig {
+  provider: SyncProviderId;
+  serverUrl: string;
+  username: string;
+  token: string;
+  salt: string;
+  lastSyncTime: string | null;
+  autoSync: boolean;
+  remoteVersion?: number;
+  dataHash?: string;
+  lastError?: string;
+  lastReachableAt?: string;
+}
+
 export interface NasSyncConfig {
   serverUrl: string;       // 极空间 NAS 网址（当前激活连接的网址）
   localUrl?: string;       // 备用：局域网内网地址 (例如 http://192.168.1.100:8088)
@@ -19,9 +35,18 @@ export interface NasSyncConfig {
   lastSyncTime: string | null; // 最后一次成功同步的时间戳
   autoSync: boolean;       // 是否开启启动/解锁时自动同步
   remoteVersion?: number;   // 最近一次确认的云端版本，用于防止旧设备覆盖新数据
+  dataHash?: string;       // 最近一次确认的远端密文指纹，用于双端安全复制
+  lastError?: string;
+  lastReachableAt?: string;
+  provider?: SyncProviderId;
+  activeProvider?: SyncProviderId;
+  endpoints?: Partial<Record<SyncProviderId, SyncEndpointConfig>>;
 }
 
 export const DEFAULT_NAS_SERVER_URL = 'http://192.168.5.134:18088';
+export const CURRENT_AUTH_KDF_ITERATIONS = 600000;
+const LEGACY_AUTH_KDF_ITERATIONS = 10000;
+const MAX_AUTH_KDF_ITERATIONS = 2_000_000;
 
 /**
  * 桌面端默认连接固定的家庭 NAS；从 NAS 网页或远程代理访问时跟随当前站点。
@@ -54,7 +79,34 @@ const NAS_CONFIG_KEY = 'safevault_nas_sync_config';
 export function loadNasSyncConfig(): NasSyncConfig | null {
   try {
     const raw = localStorage.getItem(NAS_CONFIG_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as NasSyncConfig;
+    if (!parsed || typeof parsed !== 'object' || !parsed.serverUrl && !parsed.endpoints) return null;
+
+    const activeProvider: SyncProviderId = parsed.activeProvider || parsed.provider || 'nas';
+    const endpoints = { ...(parsed.endpoints || {}) };
+    if (!endpoints.nas && parsed.serverUrl) {
+      endpoints.nas = {
+        provider: 'nas',
+        serverUrl: parsed.serverUrl,
+        username: parsed.username,
+        token: parsed.token,
+        salt: parsed.salt,
+        lastSyncTime: parsed.lastSyncTime,
+        autoSync: parsed.autoSync,
+        remoteVersion: parsed.remoteVersion,
+        dataHash: parsed.dataHash
+      };
+    }
+    const activeEndpoint = endpoints[activeProvider] || endpoints.nas;
+    if (!activeEndpoint) return null;
+    return {
+      ...parsed,
+      ...activeEndpoint,
+      provider: activeEndpoint.provider,
+      activeProvider: activeEndpoint.provider,
+      endpoints
+    };
   } catch (e) {
     console.error('读取 NAS 同步配置失败:', e);
     return null;
@@ -69,7 +121,29 @@ export function saveNasSyncConfig(config: NasSyncConfig | null): void {
     if (!config) {
       localStorage.removeItem(NAS_CONFIG_KEY);
     } else {
-      localStorage.setItem(NAS_CONFIG_KEY, JSON.stringify(config));
+      const activeProvider: SyncProviderId = config.activeProvider || config.provider || 'nas';
+      const endpoints = { ...(config.endpoints || {}) };
+      const activeEndpoint: SyncEndpointConfig = {
+        provider: activeProvider,
+        serverUrl: config.serverUrl,
+        username: config.username,
+        token: config.token,
+        salt: config.salt,
+        lastSyncTime: config.lastSyncTime,
+        autoSync: config.autoSync,
+        remoteVersion: config.remoteVersion,
+        dataHash: config.dataHash,
+        lastError: config.lastError,
+        lastReachableAt: config.lastReachableAt
+      };
+      endpoints[activeProvider] = activeEndpoint;
+      localStorage.setItem(NAS_CONFIG_KEY, JSON.stringify({
+        ...config,
+        ...activeEndpoint,
+        provider: activeProvider,
+        activeProvider,
+        endpoints
+      }));
     }
   } catch (e) {
     console.error('保存 NAS 同步配置失败:', e);
@@ -134,8 +208,12 @@ export function normalizeServerUrl(rawUrl?: string): string {
 export async function deriveAuthHash(
   username: string,
   masterPassword: string,
-  saltHex: string
+  saltHex: string,
+  iterations = CURRENT_AUTH_KDF_ITERATIONS
 ): Promise<string> {
+  if (!Number.isInteger(iterations) || iterations < LEGACY_AUTH_KDF_ITERATIONS || iterations > MAX_AUTH_KDF_ITERATIONS) {
+    throw new Error('同步认证 KDF 参数无效');
+  }
   const encoder = new TextEncoder();
   const passwordBuffer = encoder.encode(masterPassword);
 
@@ -149,12 +227,12 @@ export async function deriveAuthHash(
 
   const authSaltBuffer = encoder.encode(`safevault:nas:auth:${username.toLowerCase()}:${saltHex}`);
 
-  // 10,000 轮 PBKDF2 计算专门用于向服务器鉴权的 AuthHash
+  // 新账号使用 600,000 轮 PBKDF2；仅对未迁移的历史账号兼容 10,000 轮。
   const derivedBits = await window.crypto.subtle.deriveBits(
     {
       name: 'PBKDF2',
       salt: authSaltBuffer,
-      iterations: 10000,
+      iterations,
       hash: 'SHA-256'
     },
     baseKey,
@@ -232,6 +310,8 @@ export async function checkNasHealth(serverUrl: string): Promise<{
 export async function getNasSalt(serverUrl: string, username: string): Promise<{
   success: boolean;
   salt?: string;
+  authKdfIterations?: number;
+  status?: number;
   message?: string;
 }> {
   try {
@@ -239,13 +319,22 @@ export async function getNasSalt(serverUrl: string, username: string): Promise<{
     const res = await fetch(`${cleanUrl}/api/auth/salt?username=${encodeURIComponent(username.trim())}`, { credentials: 'include' });
     const data = await res.json();
     if (!res.ok || !data.success) {
-      return { success: false, message: data.message || '获取账号特征失败' };
+      return { success: false, status: res.status, message: data.message || '获取账号特征失败' };
     }
-    return { success: true, salt: data.salt };
+    return {
+      success: true,
+      salt: data.salt,
+      authKdfIterations: Number.isInteger(Number(data.authKdfIterations))
+        && Number(data.authKdfIterations) >= LEGACY_AUTH_KDF_ITERATIONS
+        && Number(data.authKdfIterations) <= MAX_AUTH_KDF_ITERATIONS
+        ? Number(data.authKdfIterations)
+        : LEGACY_AUTH_KDF_ITERATIONS
+    };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : '请求异常';
     return {
       success: false,
+      status: 0,
       message: message === 'Failed to fetch'
         ? '无法直连极空间 NAS；请检查端口映射，并在代理/VPN中开启“绕过局域网”'
         : message
@@ -278,6 +367,7 @@ export async function registerNasAccount(
   salt?: string;
   version?: number;
   updatedAt?: string;
+  status?: number;
   message?: string;
 }> {
   try {
@@ -299,7 +389,7 @@ export async function registerNasAccount(
 
     const data = await res.json();
     if (!res.ok || !data.success) {
-      return { success: false, message: data.message || '注册失败' };
+      return { success: false, status: res.status, message: data.message || '注册失败' };
     }
 
     return {
@@ -311,7 +401,7 @@ export async function registerNasAccount(
       message: '极空间同步账号注册成功'
     };
   } catch (err: unknown) {
-    return { success: false, message: err instanceof Error ? err.message : '网络连接失败' };
+    return { success: false, status: 0, message: err instanceof Error ? err.message : '网络连接失败' };
   }
 }
 
@@ -330,6 +420,7 @@ export async function loginNasAccount(
   version?: number;
   updatedAt?: string;
   code?: string;
+  status?: number;
   message?: string;
 }> {
   try {
@@ -339,7 +430,7 @@ export async function loginNasAccount(
     // 1. 获取盐值
     const saltRes = await getNasSalt(cleanUrl, cleanUser);
     if (!saltRes.success || !saltRes.salt) {
-      return { success: false, message: saltRes.message || '获取账号盐值失败' };
+      return { success: false, status: saltRes.status, message: saltRes.message || '获取账号盐值失败' };
     }
 
     // 同一账号在同一份 vault-store.json 中的盐值不会变化。
@@ -354,7 +445,12 @@ export async function loginNasAccount(
     }
 
     // 2. 本地计算 AuthHash
-    const authHash = await deriveAuthHash(cleanUser, masterPassword, saltRes.salt);
+    const authHash = await deriveAuthHash(
+      cleanUser,
+      masterPassword,
+      saltRes.salt,
+      saltRes.authKdfIterations || LEGACY_AUTH_KDF_ITERATIONS
+    );
 
     const challengeRes = await fetch(`${cleanUrl}/api/auth/challenge?username=${encodeURIComponent(cleanUser)}`, { credentials: 'include' });
     const challengeData = await challengeRes.json();
@@ -373,7 +469,7 @@ export async function loginNasAccount(
         });
         const legacyData = await legacyRes.json();
         if (!legacyRes.ok || !legacyData.success) {
-          return { success: false, message: legacyData.message || '账号或密码认证摘要错误' };
+          return { success: false, status: legacyRes.status, message: legacyData.message || '账号或密码认证摘要错误' };
         }
         return {
           success: true,
@@ -384,7 +480,7 @@ export async function loginNasAccount(
           message: '极空间登录成功（兼容旧版服务）'
         };
       }
-      return { success: false, message: challengeData.message || '获取登录挑战失败' };
+      return { success: false, status: challengeRes.status, message: challengeData.message || '获取登录挑战失败' };
     }
     const challengeResponse = await createChallengeResponse(authHash, challengeData.challenge);
 
@@ -402,7 +498,7 @@ export async function loginNasAccount(
 
     const data = await res.json();
     if (!res.ok || !data.success) {
-      return { success: false, message: data.message || '账号或主密码认证摘要错误' };
+      return { success: false, status: res.status, message: data.message || '账号或主密码认证摘要错误' };
     }
 
     return {
@@ -414,7 +510,7 @@ export async function loginNasAccount(
       message: '极空间登录成功'
     };
   } catch (err: unknown) {
-    return { success: false, message: err instanceof Error ? err.message : '网络请求失败' };
+    return { success: false, status: 0, message: err instanceof Error ? err.message : '网络请求失败' };
   }
 }
 
@@ -463,6 +559,256 @@ export async function updateNasAuthHash(
   }
 }
 
+/** 返回指定同步方案的独立端点配置；旧版单端配置自动视为 NAS。 */
+export function getSyncEndpoint(
+  config: NasSyncConfig,
+  provider: SyncProviderId
+): SyncEndpointConfig | null {
+  const nested = config.endpoints?.[provider];
+  if (nested?.serverUrl || nested?.token) {
+    return { ...nested, provider };
+  }
+  if (provider === 'nas' && (config.serverUrl || config.token)) {
+    return {
+      provider: 'nas',
+      serverUrl: config.serverUrl,
+      username: config.username,
+      token: config.token,
+      salt: config.salt,
+      lastSyncTime: config.lastSyncTime,
+      autoSync: config.autoSync,
+      remoteVersion: config.remoteVersion,
+      dataHash: config.dataHash,
+      lastError: config.lastError,
+      lastReachableAt: config.lastReachableAt
+    };
+  }
+  return null;
+}
+
+/** 当前优先方案在前，另一方案在后；未配置的端点不会参与自动切换。 */
+export function getSyncEndpoints(config: NasSyncConfig): SyncEndpointConfig[] {
+  const preferred: SyncProviderId = config.activeProvider || config.provider || 'nas';
+  const order: SyncProviderId[] = preferred === 'nas' ? ['nas', 'aws'] : ['aws', 'nas'];
+  return order
+    .map((provider) => getSyncEndpoint(config, provider))
+    .filter((endpoint): endpoint is SyncEndpointConfig => Boolean(endpoint?.serverUrl || endpoint?.token));
+}
+
+/** 将指定方案设为当前主方案，同时保留另一方案的登录凭据。 */
+export function activateSyncProvider(
+  config: NasSyncConfig,
+  provider: SyncProviderId,
+  endpointOverride?: Partial<SyncEndpointConfig>
+): NasSyncConfig {
+  const endpoint = getSyncEndpoint(config, provider);
+  if (!endpoint) throw new Error(`同步方案 ${provider} 尚未配置`);
+  const nextEndpoint: SyncEndpointConfig = { ...endpoint, ...endpointOverride, provider };
+  const endpoints = { ...(config.endpoints || {}), [provider]: nextEndpoint };
+  return {
+    ...config,
+    ...nextEndpoint,
+    provider,
+    activeProvider: provider,
+    endpoints
+  };
+}
+
+export function upsertSyncEndpoint(
+  config: NasSyncConfig | null,
+  endpoint: SyncEndpointConfig,
+  activate = true
+): NasSyncConfig {
+  const base = config || {
+    serverUrl: endpoint.serverUrl,
+    username: endpoint.username,
+    token: endpoint.token,
+    salt: endpoint.salt,
+    lastSyncTime: endpoint.lastSyncTime,
+    autoSync: endpoint.autoSync
+  };
+  const endpoints = { ...(base.endpoints || {}), [endpoint.provider]: endpoint };
+  const activeProvider = activate
+    ? endpoint.provider
+    : (base.activeProvider || base.provider || 'nas');
+  const activeEndpoint = endpoints[activeProvider] || endpoint;
+  return {
+    ...base,
+    ...(activate ? endpoint : activeEndpoint),
+    provider: activeProvider,
+    activeProvider,
+    endpoints
+  };
+}
+
+export interface SyncOperationResult {
+  success: boolean;
+  status?: number;
+  code?: string;
+  message?: string;
+}
+
+export interface SyncFailoverResult<T extends SyncOperationResult> {
+  result: T;
+  endpoint: SyncEndpointConfig;
+  failedOver: boolean;
+  attemptedProviders: SyncProviderId[];
+}
+
+function isTransientSyncFailure(result: SyncOperationResult): boolean {
+  if (result.success || result.code === 'VERSION_CONFLICT' || result.code === 'VERSION_REQUIRED'
+    || result.code === 'BACKUP_FAILED' || result.code === 'AUTH_FAILED') return false;
+  if (typeof result.status === 'number') return result.status === 0 || result.status === 408 || result.status >= 500;
+  const message = String(result.message || '').toLowerCase();
+  return /network|fetch|timeout|超时|网络|连接|通信|不可达|无法连接|代理|aborted/.test(message);
+}
+
+/** 仅在网络/服务端故障时自动切换；认证失败和版本冲突绝不静默切换或覆盖数据。 */
+export async function runWithSyncFailover<T extends SyncOperationResult>(
+  config: NasSyncConfig,
+  operation: (endpoint: SyncEndpointConfig) => Promise<T>
+): Promise<SyncFailoverResult<T>> {
+  const endpoints = getSyncEndpoints(config);
+  if (endpoints.length === 0) {
+    throw new Error('尚未配置可用的同步方案');
+  }
+
+  let lastResult: T | null = null;
+  const attemptedProviders: SyncProviderId[] = [];
+  for (const endpoint of endpoints) {
+    attemptedProviders.push(endpoint.provider);
+    const result = await operation(endpoint);
+    lastResult = result;
+    if (result.success || !isTransientSyncFailure(result)) {
+      return {
+        result,
+        endpoint,
+        failedOver: endpoint.provider !== endpoints[0].provider,
+        attemptedProviders
+      };
+    }
+  }
+
+  return {
+    result: lastResult!,
+    endpoint: endpoints[endpoints.length - 1],
+    failedOver: endpoints.length > 1,
+    attemptedProviders
+  };
+}
+
+/**
+ * 将同一份已经加密的载荷复制到另一同步端。
+ * 复制前必须看到空库，或确认远端仍等于上次已复制的指纹；发现未知变化时只报告冲突，绝不覆盖。
+ */
+export async function replicateVaultToSecondary(
+  config: NasSyncConfig,
+  sourceProvider: SyncProviderId,
+  vaultMeta: VaultMeta,
+  encryptedItems: EncryptedVaultItem[],
+  deviceName?: string
+): Promise<{
+  replicatedProviders: SyncProviderId[];
+  unavailableProviders: SyncProviderId[];
+  conflictedProviders: SyncProviderId[];
+}> {
+  const targets = getSyncEndpoints(config).filter((endpoint) => endpoint.provider !== sourceProvider);
+  const replicatedProviders: SyncProviderId[] = [];
+  const unavailableProviders: SyncProviderId[] = [];
+  const conflictedProviders: SyncProviderId[] = [];
+
+  for (const endpoint of targets) {
+    const status = await getNasSyncStatus(endpoint.serverUrl, endpoint.token);
+    if (!status.success || typeof status.version !== 'number') {
+      unavailableProviders.push(endpoint.provider);
+      continue;
+    }
+
+    const safeToOverwrite = !status.hasData
+      || Boolean(endpoint.dataHash && status.dataHash && endpoint.dataHash === status.dataHash);
+    if (!safeToOverwrite) {
+      conflictedProviders.push(endpoint.provider);
+      continue;
+    }
+
+    const push = await pushVaultToNas(
+      endpoint.serverUrl,
+      endpoint.token,
+      vaultMeta,
+      encryptedItems,
+      deviceName,
+      status.version
+    );
+    if (push.success) replicatedProviders.push(endpoint.provider);
+    else if (push.code === 'VERSION_CONFLICT' || push.code === 'VERSION_REQUIRED') conflictedProviders.push(endpoint.provider);
+    else unavailableProviders.push(endpoint.provider);
+  }
+
+  return { replicatedProviders, unavailableProviders, conflictedProviders };
+}
+
+/**
+ * 原子修改同步账号主密码：服务端在同一个版本锁和灾备事务中切换
+ * AuthHash 与新金库密文，避免两阶段提交造成账号/密文不一致。
+ */
+export async function changeNasAccountPassword(
+  serverUrl: string,
+  token: string,
+  username: string,
+  newMasterPassword: string,
+  salt: string,
+  vaultMeta: VaultMeta,
+  encryptedItems: EncryptedVaultItem[],
+  expectedVersion: number,
+  deviceName?: string
+): Promise<{
+  success: boolean;
+  version?: number;
+  updatedAt?: string;
+  itemsCount?: number;
+  code?: string;
+  message?: string;
+}> {
+  try {
+    const cleanUrl = normalizeServerUrl(serverUrl);
+    const cleanUser = username.trim().toLowerCase();
+    const authHash = await deriveAuthHash(cleanUser, newMasterPassword, salt);
+    const res = await fetch(`${cleanUrl}/api/auth/change-password`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        authHash,
+        vaultMeta,
+        encryptedItems,
+        clientVersion: expectedVersion,
+        deviceName: deviceName || getDeviceIdentifier()
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      return {
+        success: false,
+        code: data.code,
+        version: data.version,
+        message: data.message || '主密码原子更新失败'
+      };
+    }
+    return {
+      success: true,
+      version: data.version,
+      updatedAt: data.updatedAt,
+      itemsCount: data.itemsCount,
+      message: data.message || '主密码与加密金库已原子更新'
+    };
+  } catch (err: unknown) {
+    return { success: false, message: err instanceof Error ? err.message : '主密码原子更新时网络异常' };
+  }
+}
+
 /**
  * 查询同步状态与云端版本
  */
@@ -476,6 +822,8 @@ export async function getNasSyncStatus(
   hasData?: boolean;
   itemsCount?: number;
   backupCount?: number;
+  dataHash?: string;
+  status?: number;
   message?: string;
 }> {
   try {
@@ -486,7 +834,7 @@ export async function getNasSyncStatus(
     });
     const data = await res.json();
     if (!res.ok || !data.success) {
-      return { success: false, message: data.message || '查询同步状态失败' };
+      return { success: false, status: res.status, message: data.message || '查询同步状态失败' };
     }
     return {
       success: true,
@@ -494,10 +842,11 @@ export async function getNasSyncStatus(
       updatedAt: data.updatedAt,
       hasData: data.hasData,
       itemsCount: data.itemsCount,
-      backupCount: data.backupCount
+      backupCount: data.backupCount,
+      dataHash: data.dataHash || undefined
     };
   } catch (err: unknown) {
-    return { success: false, message: err instanceof Error ? err.message : '网络请求失败' };
+    return { success: false, status: 0, message: err instanceof Error ? err.message : '网络请求失败' };
   }
 }
 
@@ -509,6 +858,7 @@ export async function getNasBackups(
   success: boolean;
   currentVersion?: number;
   backups?: NasBackupSummary[];
+  status?: number;
   message?: string;
 }> {
   try {
@@ -518,10 +868,10 @@ export async function getNasBackups(
       headers: { Authorization: `Bearer ${token}` }
     });
     const data = await res.json();
-    if (!res.ok || !data.success) return { success: false, message: data.message || '读取历史备份失败' };
+    if (!res.ok || !data.success) return { success: false, status: res.status, message: data.message || '读取历史备份失败' };
     return { success: true, currentVersion: data.currentVersion, backups: data.backups || [] };
   } catch (err: unknown) {
-    return { success: false, message: err instanceof Error ? err.message : '网络请求失败' };
+    return { success: false, status: 0, message: err instanceof Error ? err.message : '网络请求失败' };
   }
 }
 
@@ -537,6 +887,8 @@ export async function rollbackNasBackup(
   version?: number;
   updatedAt?: string;
   itemsCount?: number;
+  dataHash?: string;
+  status?: number;
   message?: string;
 }> {
   try {
@@ -548,10 +900,10 @@ export async function rollbackNasBackup(
       body: JSON.stringify({ snapshotId, expectedVersion, deviceName: deviceName || getDeviceIdentifier() })
     });
     const data = await res.json();
-    if (!res.ok || !data.success) return { success: false, message: data.message || '历史版本回滚失败' };
-    return { success: true, version: data.version, updatedAt: data.updatedAt, itemsCount: data.itemsCount, message: data.message };
+    if (!res.ok || !data.success) return { success: false, status: res.status, message: data.message || '历史版本回滚失败' };
+    return { success: true, version: data.version, updatedAt: data.updatedAt, itemsCount: data.itemsCount, dataHash: data.dataHash, message: data.message };
   } catch (err: unknown) {
-    return { success: false, message: err instanceof Error ? err.message : '网络请求失败' };
+    return { success: false, status: 0, message: err instanceof Error ? err.message : '网络请求失败' };
   }
 }
 
@@ -571,6 +923,8 @@ export async function pushVaultToNas(
   updatedAt?: string;
   itemsCount?: number;
   code?: string;
+  dataHash?: string;
+  status?: number;
   message?: string;
 }> {
   try {
@@ -594,7 +948,7 @@ export async function pushVaultToNas(
 
     const data = await res.json();
     if (!res.ok || !data.success) {
-      return { success: false, code: data.code, version: data.version, message: data.message || '数据推送失败' };
+      return { success: false, code: data.code, status: res.status, version: data.version, message: data.message || '数据推送失败' };
     }
 
     return {
@@ -602,11 +956,12 @@ export async function pushVaultToNas(
       version: data.version,
       updatedAt: data.updatedAt,
       itemsCount: data.itemsCount,
+      dataHash: data.dataHash || undefined,
       code: data.code,
       message: '密文数据已安全推送至极空间 NAS'
     };
   } catch (err: unknown) {
-    return { success: false, message: err instanceof Error ? err.message : '网络通信异常' };
+    return { success: false, status: 0, message: err instanceof Error ? err.message : '网络通信异常' };
   }
 }
 
@@ -622,6 +977,8 @@ export async function pullVaultFromNas(
   encryptedItems?: EncryptedVaultItem[];
   version?: number;
   updatedAt?: string;
+  dataHash?: string;
+  status?: number;
   message?: string;
 }> {
   try {
@@ -633,7 +990,7 @@ export async function pullVaultFromNas(
 
     const data = await res.json();
     if (!res.ok || !data.success) {
-      return { success: false, message: data.message || '数据拉取失败' };
+      return { success: false, status: res.status, message: data.message || '数据拉取失败' };
     }
 
     return {
@@ -641,10 +998,11 @@ export async function pullVaultFromNas(
       vaultMeta: data.vaultMeta,
       encryptedItems: data.encryptedItems || [],
       version: data.version,
-      updatedAt: data.updatedAt
+      updatedAt: data.updatedAt,
+      dataHash: data.dataHash || undefined
     };
   } catch (err: unknown) {
-    return { success: false, message: err instanceof Error ? err.message : '网络通信异常' };
+    return { success: false, status: 0, message: err instanceof Error ? err.message : '网络通信异常' };
   }
 }
 

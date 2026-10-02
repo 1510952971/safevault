@@ -12,7 +12,11 @@ data/vault-store.json
 data/**/*.tmp.*
 safevault-backup/
 
-# Keep the deterministic sync fixture available for development on other machines.
-!data/test-data/
-!data/test-data/vault-store.json
+# Never commit deterministic or runtime authentication fixtures.
+data/test-data/
 data/test-data-*/
+
+# AWS deployment runtime state and secrets
+deploy/aws/.env
+deploy/aws/data/
+deploy/aws/backup/

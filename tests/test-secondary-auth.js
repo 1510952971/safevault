@@ -5,7 +5,7 @@ import assert from 'node:assert';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
-const PBKDF2_ITERATIONS = 100000;
+const PBKDF2_ITERATIONS = 600000;
 const SECONDARY_TOKEN_CONST = 'SAFEVAULT_SECONDARY_AUTH_VERIFIED_TOKEN';
 
 function bufferToBase64(buffer) {

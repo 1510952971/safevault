@@ -28,6 +28,7 @@ const LATEST_DATABASE_BACKUP = path.join(DATABASE_BACKUP_DIR, 'vault-store-lates
 const LEGACY_BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, '..', 'dist');
 const REQUIRE_HTTPS = process.env.REQUIRE_HTTPS === 'true';
+const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
 const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:3000,https://localhost,capacitor://localhost,null,file://').split(',').map((origin) => origin.trim()).filter(Boolean);
 const packageInfo = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
 const SERVER_VERSION = packageInfo.version;
@@ -42,6 +43,13 @@ function getFrontendVersion() {
 }
 const MAX_SNAPSHOTS = 30;
 const MAX_DATABASE_BACKUPS = 30;
+const CURRENT_AUTH_KDF_ITERATIONS = 600000;
+const LEGACY_AUTH_KDF_ITERATIONS = 10000;
+const MAX_BODY_BYTES = Number.isSafeInteger(Number(process.env.MAX_BODY_BYTES))
+  ? Math.max(1024 * 1024, Number(process.env.MAX_BODY_BYTES))
+  : 10 * 1024 * 1024;
+const MAX_SYNC_ITEMS = 10000;
+const MAX_ENCRYPTED_FIELD_BYTES = 8 * 1024 * 1024;
 
 // 认证失败限流：按 IP 与账号分别计数，避免 authHash 被暴力重放。
 const authFailures = new Map();
@@ -66,6 +74,16 @@ function recordAuthFailure(req, username) {
   else entry.count += 1;
 }
 function clearAuthFailures(req, username) { authFailures.delete(authKey(req, username)); }
+
+function forwardedProto(req) {
+  if (!TRUST_PROXY) return req.socket.encrypted ? 'https' : 'http';
+  return String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase()
+    || (req.socket.encrypted ? 'https' : 'http');
+}
+
+function isHttpsRequest(req) {
+  return forwardedProto(req) === 'https';
+}
 function issueAuthChallenge(username) {
   const challenge = crypto.randomBytes(32).toString('hex');
   // 极空间远程代理可能为“获取挑战”和“提交登录”使用不同的上游
@@ -192,6 +210,27 @@ function backupDirectoryFor(username) {
   return directory;
 }
 
+function normalizeDeviceName(value) {
+  const normalized = String(value || 'Unknown')
+    .replace(/[^\p{L}\p{N} _.:/@+\-]/gu, '?')
+    .trim()
+    .slice(0, 128);
+  return normalized || 'Unknown';
+}
+
+// 只返回密文载荷的指纹，便于 NAS 与 AWS 之间判断“是否仍是上次已复制的同一份数据”。
+// 指纹不包含明文，也不允许客户端在未知远端状态下盲目覆盖另一端。
+function vaultDataHash(vaultMeta, encryptedItems) {
+  if (!vaultMeta || !Array.isArray(encryptedItems)) return null;
+  return crypto.createHash('sha256')
+    .update(JSON.stringify({ vaultMeta, encryptedItems }))
+    .digest('hex');
+}
+
+function currentVaultDataHash(user) {
+  return vaultDataHash(user?.vaultMeta, user?.encryptedItems || []);
+}
+
 function migrateLegacyUserSnapshots() {
   if (!fs.existsSync(LEGACY_BACKUP_DIR)) return;
   for (const [username, user] of Object.entries(db.users || {})) {
@@ -223,7 +262,7 @@ function createUserSnapshot(username, currentUser, reason, deviceName) {
     updatedAt: currentUser.updatedAt || createdAt,
     createdAt,
     reason: reason || 'before-update',
-    deviceName: deviceName || 'Unknown',
+    deviceName: normalizeDeviceName(deviceName),
     itemsCount: Array.isArray(currentUser.encryptedItems) ? currentUser.encryptedItems.length : 0,
     vaultMeta: currentUser.vaultMeta,
     encryptedItems: Array.isArray(currentUser.encryptedItems) ? currentUser.encryptedItems : []
@@ -350,13 +389,25 @@ const MIME_TYPES = {
 function parseJsonBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+      req.resume();
+    };
     req.on('data', (chunk) => {
-      body += chunk;
-      if (body.length > 50 * 1024 * 1024) { // 限制 50MB
-        reject(new Error('Payload Too Large'));
+      if (settled) return;
+      const nextSize = Buffer.byteLength(body) + Buffer.byteLength(chunk);
+      if (nextSize > MAX_BODY_BYTES) {
+        fail(new Error('Payload Too Large'));
+        return;
       }
+      body += chunk;
     });
     req.on('end', () => {
+      if (settled) return;
+      settled = true;
       if (!body.trim()) return resolve({});
       try {
         resolve(JSON.parse(body));
@@ -368,19 +419,30 @@ function parseJsonBody(req) {
   });
 }
 
-// 辅助工具：响应 JSON
-function sendJson(res, statusCode, data) {
-  res.writeHead(statusCode, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': getCorsOrigin(res.req),
-    'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Access-Token',
+function securityHeaders(req, cacheControl = 'no-store') {
+  const headers = {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'no-referrer',
     'Content-Security-Policy': "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: http://localhost:* http://127.0.0.1:* http://192.168.* http://10.* http://172.16.* http://172.17.* http://172.18.* http://172.19.* http://172.2* http://172.30.* http://172.31.*",
-    'Cache-Control': 'no-store'
+    'Cache-Control': cacheControl
+  };
+  if (isHttpsRequest(req)) headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains';
+  const origin = getCorsOrigin(req);
+  if (origin) {
+    headers['Access-Control-Allow-Origin'] = origin;
+    headers['Access-Control-Allow-Credentials'] = 'true';
+    headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+    headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Access-Token';
+  }
+  return headers;
+}
+
+// 辅助工具：响应 JSON
+function sendJson(res, statusCode, data) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    ...securityHeaders(res.req)
   });
   res.end(JSON.stringify(data));
 }
@@ -399,24 +461,74 @@ function parseCookies(req) {
 
 function getCorsOrigin(req) {
   const origin = String(req.headers.origin || '');
+  if (!origin) return null;
   // Electron 使用 file://；Capacitor Android/iOS 使用 localhost 或 capacitor://localhost。
   // 所有客户端同步同时使用 Bearer Token，不依赖跨域 Cookie。
   if (origin === 'null' || origin.startsWith('file://')) return origin || 'null';
-  return CORS_ORIGINS.includes(origin) ? origin : CORS_ORIGINS[0];
+  return CORS_ORIGINS.includes(origin) ? origin : null;
 }
 
 function sessionCookie(token, req) {
-  const secure = REQUIRE_HTTPS || req.headers['x-forwarded-proto'] === 'https';
+  const secure = REQUIRE_HTTPS || isHttpsRequest(req);
   return `safevault_session=${encodeURIComponent(token)}; Max-Age=2592000; Path=/; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
+}
+
+function isBase64(value, maxBytes = MAX_ENCRYPTED_FIELD_BYTES) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > Math.ceil(maxBytes * 4 / 3) + 8) return false;
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) return false;
+  try {
+    return Buffer.from(value, 'base64').length <= maxBytes;
+  } catch {
+    return false;
+  }
+}
+
+function validateVaultPayload(vaultMeta, encryptedItems) {
+  if (!vaultMeta || typeof vaultMeta !== 'object' || Array.isArray(vaultMeta)) return 'vaultMeta 格式无效';
+  if (!isBase64(vaultMeta.salt, 64) || !isBase64(vaultMeta.testIv, 64) || !isBase64(vaultMeta.testCipher, 1024)) {
+    return 'vaultMeta 加密字段格式无效';
+  }
+  if (vaultMeta.keyEnvelopeVersion === 2
+    && (!isBase64(vaultMeta.wrappedVaultKey, 128) || !isBase64(vaultMeta.wrappedVaultKeyIv, 64))) {
+    return '金库密钥包裹字段格式无效';
+  }
+  if (!Array.isArray(encryptedItems) || encryptedItems.length > MAX_SYNC_ITEMS) return '密文条目数量超出限制';
+  for (const item of encryptedItems) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return '密文条目格式无效';
+    if (typeof item.id !== 'string' || item.id.length < 8 || item.id.length > 128) return '密文条目标识无效';
+    if (item.encryptionVersion !== undefined && item.encryptionVersion !== 2 && item.encryptionVersion !== 3) {
+      return '密文条目版本无效';
+    }
+    if (!isBase64(item.iv, 64) || !isBase64(item.encryptedPayload, MAX_ENCRYPTED_FIELD_BYTES)) {
+      return '密文条目加密字段格式无效';
+    }
+    // v3 的设计要求整条记录进入密文；若外壳又携带可读元数据，拒绝写入，
+    // 避免服务器端逐步积累意外泄露的标题/网址/分类。
+    if (item.encryptionVersion === 3 && ['title', 'category', 'website', 'tags', 'isFavorite', 'isDeleted', 'deletedAt', 'createdAt', 'updatedAt']
+      .some((field) => Object.prototype.hasOwnProperty.call(item, field))) {
+      return 'v3 密文条目不得包含明文元数据';
+    }
+  }
+  return null;
 }
 
 // 处理静态文件
 function serveStaticFile(req, res, pathname) {
-  let filePath = path.join(STATIC_DIR, pathname);
+  let decodedPathname;
+  try {
+    decodedPathname = decodeURIComponent(pathname);
+  } catch {
+    res.writeHead(400, { ...securityHeaders(req), 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('Bad Request');
+  }
+  const staticRoot = path.resolve(STATIC_DIR);
+  const relativePath = decodedPathname.replace(/^[/\\]+/, '');
+  const filePath = path.resolve(staticRoot, relativePath);
+  const relativeToRoot = path.relative(staticRoot, filePath);
 
   // 安全检查：防止目录穿越
-  if (!filePath.startsWith(STATIC_DIR)) {
-    res.writeHead(403);
+  if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
+    res.writeHead(403, { ...securityHeaders(req), 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end('Forbidden');
   }
 
@@ -426,10 +538,10 @@ function serveStaticFile(req, res, pathname) {
       const indexPath = path.join(STATIC_DIR, 'index.html');
       fs.readFile(indexPath, (indexErr, indexData) => {
         if (indexErr) {
-          res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.writeHead(404, { ...securityHeaders(req), 'Content-Type': 'text/plain; charset=utf-8' });
           return res.end('SafeVault 静态页面未编译或缺失，请在工程中运行 npm run build 后重新构建容器。');
         }
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.writeHead(200, { ...securityHeaders(req, 'no-cache'), 'Content-Type': 'text/html; charset=utf-8' });
         res.end(indexData);
       });
       return;
@@ -441,7 +553,7 @@ function serveStaticFile(req, res, pathname) {
 
     res.writeHead(200, {
       'Content-Type': contentType,
-      'Cache-Control': isImmutable ? 'public, max-age=31536000, immutable' : 'no-cache'
+      ...securityHeaders(req, isImmutable ? 'public, max-age=31536000, immutable' : 'no-cache')
     });
 
     const stream = fs.createReadStream(filePath);
@@ -451,7 +563,7 @@ function serveStaticFile(req, res, pathname) {
 
 // 创建 HTTP 服务器
 const server = http.createServer(async (req, res) => {
-  if (REQUIRE_HTTPS && req.headers['x-forwarded-proto'] !== 'https') {
+  if (REQUIRE_HTTPS && !isHttpsRequest(req)) {
     return sendJson(res, 426, { success: false, message: '此同步服务要求通过 HTTPS 反向代理访问' });
   }
   const reqUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
@@ -459,13 +571,7 @@ const server = http.createServer(async (req, res) => {
 
   // 全局 CORS 预检
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': getCorsOrigin(req),
-      'Access-Control-Allow-Credentials': 'true',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Access-Token',
-      'Access-Control-Max-Age': '86400'
-    });
+    res.writeHead(204, { ...securityHeaders(req), 'Access-Control-Max-Age': '86400' });
     return res.end();
   }
 
@@ -495,6 +601,9 @@ const server = http.createServer(async (req, res) => {
         if (!username || !authHash || !salt) {
           return sendJson(res, 400, { success: false, message: '注册参数不完整 (username, authHash, salt 必填)' });
         }
+        if (!/^[0-9a-f]{64}$/i.test(String(authHash)) || !/^[0-9a-f]{32}$/i.test(String(salt))) {
+          return sendJson(res, 400, { success: false, message: '注册认证参数格式无效' });
+        }
         const cleanUser = String(username).trim().toLowerCase();
         if (cleanUser.length < 3) {
           return sendJson(res, 400, { success: false, message: '账号名称长度不得少于 3 个字符' });
@@ -508,6 +617,7 @@ const server = http.createServer(async (req, res) => {
           username: cleanUser,
           authHash,
           salt,
+          authKdfIterations: CURRENT_AUTH_KDF_ITERATIONS,
           createdAt: now,
           updatedAt: now,
           vaultMeta: null,
@@ -540,7 +650,8 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, {
           success: true,
           username: cleanUser,
-          salt: user.salt
+          salt: user.salt,
+          authKdfIterations: Number(user.authKdfIterations) || LEGACY_AUTH_KDF_ITERATIONS
         });
       }
 
@@ -580,6 +691,7 @@ const server = http.createServer(async (req, res) => {
           username: cleanUser,
           token,
           salt: user.salt,
+          authKdfIterations: Number(user.authKdfIterations) || LEGACY_AUTH_KDF_ITERATIONS,
           version: user.version,
           updatedAt: user.updatedAt
         });
@@ -615,6 +727,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         currentUser.authHash = cleanAuthHash;
+        currentUser.authKdfIterations = CURRENT_AUTH_KDF_ITERATIONS;
         currentUser.updatedAt = new Date().toISOString();
         saveDatabase();
         return sendJson(res, 200, {
@@ -623,6 +736,62 @@ const server = http.createServer(async (req, res) => {
           username: authUsername,
           salt: currentUser.salt,
           updatedAt: currentUser.updatedAt
+        });
+      }
+
+      // 主密码变更的原子提交：认证摘要与新密文金库必须在同一次
+      // 版本锁/灾备事务中切换，避免“能登录但打不开库”或反向半成功状态。
+      if (pathname === '/api/auth/change-password' && req.method === 'POST') {
+        const { authHash, vaultMeta, encryptedItems, clientVersion, deviceName } = await parseJsonBody(req);
+        const cleanAuthHash = String(authHash || '').trim().toLowerCase();
+        if (!/^[0-9a-f]{64}$/.test(cleanAuthHash)) {
+          return sendJson(res, 400, { success: false, message: '认证摘要格式无效' });
+        }
+        const payloadError = validateVaultPayload(vaultMeta, encryptedItems);
+        if (payloadError) {
+          return sendJson(res, 400, { success: false, message: `改密数据校验失败：${payloadError}` });
+        }
+        if (!currentUser.vaultMeta || !Number.isInteger(clientVersion) || clientVersion !== currentUser.version) {
+          return sendJson(res, 409, {
+            success: false,
+            code: 'VERSION_CONFLICT',
+            version: currentUser.version,
+            message: '云端版本已变化，请先拉取最新金库后再修改主密码'
+          });
+        }
+
+        const previousState = {
+          authHash: currentUser.authHash,
+          authKdfIterations: currentUser.authKdfIterations,
+          vaultMeta: currentUser.vaultMeta,
+          encryptedItems: currentUser.encryptedItems,
+          version: currentUser.version,
+          updatedAt: currentUser.updatedAt,
+          snapshots: currentUser.snapshots
+        };
+        try {
+          createUserSnapshot(authUsername, currentUser, 'before-password-change', deviceName);
+          const now = new Date().toISOString();
+          currentUser.authHash = cleanAuthHash;
+          currentUser.authKdfIterations = CURRENT_AUTH_KDF_ITERATIONS;
+          currentUser.vaultMeta = vaultMeta;
+          currentUser.encryptedItems = encryptedItems;
+          currentUser.version += 1;
+          currentUser.updatedAt = now;
+          saveDatabase();
+        } catch (error) {
+          Object.assign(currentUser, previousState);
+          console.error('[SafeVault Password Change] 原子改密提交失败:', error);
+          return sendJson(res, 507, { success: false, code: 'PASSWORD_CHANGE_COMMIT_FAILED', message: '改密提交失败，云端数据未改变' });
+        }
+
+        console.log(`[SafeVault Sync] 用户 [${authUsername}] 已完成原子改密，密文金库更新至 v${currentUser.version}`);
+        return sendJson(res, 200, {
+          success: true,
+          message: '主密码与加密金库已原子更新',
+          version: currentUser.version,
+          updatedAt: currentUser.updatedAt,
+          itemsCount: currentUser.encryptedItems.length
         });
       }
 
@@ -635,7 +804,8 @@ const server = http.createServer(async (req, res) => {
           updatedAt: currentUser.updatedAt,
           hasData: Boolean(currentUser.vaultMeta && currentUser.vaultMeta.testCipher),
           itemsCount: currentUser.encryptedItems.length,
-          backupCount: Array.isArray(currentUser.snapshots) ? currentUser.snapshots.length : 0
+          backupCount: Array.isArray(currentUser.snapshots) ? currentUser.snapshots.length : 0,
+          dataHash: currentVaultDataHash(currentUser)
         });
       }
 
@@ -653,6 +823,10 @@ const server = http.createServer(async (req, res) => {
         const { vaultMeta, encryptedItems, clientVersion, deviceName } = await parseJsonBody(req);
         if (!vaultMeta) {
           return sendJson(res, 400, { success: false, message: '推送数据必须包含 vaultMeta' });
+        }
+        const payloadError = validateVaultPayload(vaultMeta, encryptedItems);
+        if (payloadError) {
+          return sendJson(res, 400, { success: false, message: `推送数据校验失败：${payloadError}` });
         }
 
         // 新服务端不允许旧客户端在没有版本基线的情况下覆盖已有云端数据。
@@ -687,19 +861,20 @@ const server = http.createServer(async (req, res) => {
         }
 
         currentUser.vaultMeta = vaultMeta;
-        currentUser.encryptedItems = Array.isArray(encryptedItems) ? encryptedItems : [];
+        currentUser.encryptedItems = encryptedItems;
         currentUser.version = (currentUser.version || 0) + 1;
         currentUser.updatedAt = new Date().toISOString();
         saveDatabase();
 
-        console.log(`[SafeVault Sync] 用户 [${authUsername}] 来自设备 [${deviceName || 'Unknown'}] 成功推送 ${currentUser.encryptedItems.length} 条加密凭据 (版本: v${currentUser.version})`);
+        console.log(`[SafeVault Sync] 用户 [${authUsername}] 来自设备 [${normalizeDeviceName(deviceName)}] 成功推送 ${currentUser.encryptedItems.length} 条加密凭据 (版本: v${currentUser.version})`);
 
         return sendJson(res, 200, {
           success: true,
           message: '已成功将加密金库同步至极空间',
           version: currentUser.version,
           updatedAt: currentUser.updatedAt,
-          itemsCount: currentUser.encryptedItems.length
+          itemsCount: currentUser.encryptedItems.length,
+          dataHash: currentVaultDataHash(currentUser)
         });
       }
 
@@ -710,7 +885,8 @@ const server = http.createServer(async (req, res) => {
           vaultMeta: currentUser.vaultMeta,
           encryptedItems: currentUser.encryptedItems || [],
           version: currentUser.version,
-          updatedAt: currentUser.updatedAt
+          updatedAt: currentUser.updatedAt,
+          dataHash: currentVaultDataHash(currentUser)
         });
       }
 

@@ -1,0 +1,188 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: SafeVault dual-sync AWS endpoint on EC2 with EBS-backed Docker storage and Caddy HTTPS.
+
+Parameters:
+  SafeVaultDomain:
+    Type: String
+    Default: aws-safevault.eyeme.online
+    Description: DNS name that will point to the stack output PublicIp.
+  RepositoryUrl:
+    Type: String
+    Default: https://github.com/1510952971/safevault.git
+  RepositoryRef:
+    Type: String
+    Default: main
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t3.small
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: safevault-aws-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.42.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: safevault-aws-public-subnet
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  DefaultInternetRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet
+
+  SafeVaultSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SafeVault HTTPS endpoint; SSH and port 8088 stay closed.
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: safevault-aws-web
+
+  SafeVaultRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: safevault-aws-ssm
+
+  SafeVaultInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref SafeVaultRole
+
+  SafeVaultInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+      IamInstanceProfile: !Ref SafeVaultInstanceProfile
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref SafeVaultSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: false
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash
+            set -euxo pipefail
+            dnf update -y
+            dnf install -y git curl
+            dnf install -y docker
+            systemctl enable --now docker
+            mkdir -p /usr/local/lib/docker/cli-plugins
+            curl -fsSL https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64 \
+              -o /usr/local/lib/docker/cli-plugins/docker-compose
+            chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+            mkdir -p /opt/safevault
+            if [ ! -d /opt/safevault/.git ]; then
+              git clone --branch '${RepositoryRef}' --depth 1 '${RepositoryUrl}' /opt/safevault
+            else
+              git -C /opt/safevault fetch --depth 1 origin '${RepositoryRef}'
+              git -C /opt/safevault reset --hard FETCH_HEAD
+            fi
+            cp /opt/safevault/deploy/aws/.env.example /opt/safevault/deploy/aws/.env
+            sed -i "s#^SAFEVAULT_DOMAIN=.*#SAFEVAULT_DOMAIN=${SafeVaultDomain}#" /opt/safevault/deploy/aws/.env
+            sed -i "s#^CORS_ORIGIN=.*#CORS_ORIGIN=https://${SafeVaultDomain}#" /opt/safevault/deploy/aws/.env
+            mkdir -p /opt/safevault/deploy/aws/data /opt/safevault/deploy/aws/backup
+            cd /opt/safevault
+            docker compose -f deploy/aws/docker-compose.yml up -d --build
+
+      Tags:
+        - Key: Name
+          Value: safevault-aws-sync
+        - Key: Application
+          Value: SafeVault
+
+  SafeVaultElasticIp:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: safevault-aws-eip
+
+  SafeVaultElasticIpAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt SafeVaultElasticIp.AllocationId
+      InstanceId: !Ref SafeVaultInstance
+
+Outputs:
+  PublicIp:
+    Description: Point the DNS A record for SafeVaultDomain to this address.
+    Value: !Ref SafeVaultElasticIp
+  SafeVaultUrl:
+    Description: HTTPS URL to enter in SafeVault as the AWS sync endpoint.
+    Value: !Sub https://${SafeVaultDomain}
+  InstanceId:
+    Description: EC2 instance id; use Systems Manager for administration.
+    Value: !Ref SafeVaultInstance

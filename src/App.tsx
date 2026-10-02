@@ -40,9 +40,13 @@ import {
   normalizeServerUrl,
   getDeviceIdentifier,
   logoutNasAccount,
-  updateNasAuthHash,
   getNasSyncStatus,
-  NasSyncConfig
+  NasSyncConfig,
+  SyncEndpointConfig,
+  changeNasAccountPassword,
+  runWithSyncFailover,
+  upsertSyncEndpoint,
+  replicateVaultToSecondary
 } from './utils/sync';
 import { PrivacyShield } from './components/PrivacyShield';
 import { Toast } from './components/Toast';
@@ -310,6 +314,34 @@ export const App: React.FC = () => {
         effectiveMeta = pullRes.vaultMeta;
         const encryptedItems = pullRes.encryptedItems || [];
         decryptedList = await decryptAllVaultItems(derivedKey, encryptedItems);
+
+        // 旧金库只在用户已经用正确主密码登录后迁移：重新生成随机 DEK、
+        // 用当前密码包裹它，并把所有旧条目写成 v3。没有主密码的服务端
+        // 无法代替客户端完成这一步，也不存在静默恢复或绕过路径。
+        const needsProtocolMigration = effectiveMeta.keyEnvelopeVersion !== 2
+          || encryptedItems.some((item) => item.encryptionVersion !== 3);
+        if (needsProtocolMigration) {
+          const upgraded = await initializeVaultMeta(masterPassword);
+          const upgradedItems: EncryptedVaultItem[] = [];
+          for (const item of decryptedList) {
+            upgradedItems.push(await encryptVaultItem(upgraded.masterKey, item, item.id));
+          }
+          const migrationPush = await pushVaultToNas(
+            cleanUrl,
+            sessionToken,
+            upgraded.meta,
+            upgradedItems,
+            getDeviceIdentifier(),
+            pullRes.version
+          );
+          if (!migrationPush.success) {
+            throw new Error(migrationPush.message || '旧版金库迁移失败，未改变云端数据；请稍后重试');
+          }
+          effectiveMeta = upgraded.meta;
+          derivedKey = upgraded.masterKey;
+          authoritativeVersion = migrationPush.version ?? authoritativeVersion;
+          addToast('info', '已将旧版金库安全迁移到整条记录加密协议');
+        }
       } else {
         // NAS 是唯一权威数据源。新账号在 NAS 上为空时只创建空库，
         // 不自动读取或迁移当前设备的本地离线库，避免把旧设备数据覆盖到错误账号。
@@ -465,21 +497,38 @@ export const App: React.FC = () => {
     if (nasTransferInFlightRef.current) return false;
     nasTransferInFlightRef.current = true;
     try {
-      const status = await getNasSyncStatus(cfg.serverUrl, cfg.token);
+      const statusExecution = await runWithSyncFailover(cfg, (endpoint) =>
+        getNasSyncStatus(endpoint.serverUrl, endpoint.token)
+      );
+      const status = statusExecution.result;
       if (!status.success || typeof status.version !== 'number') return false;
-      const encrypted = [];
+      const encrypted: EncryptedVaultItem[] = [];
       for (const it of currentItems) {
         encrypted.push(await encryptVaultItem(key, it, it.id));
       }
-      const res = await pushVaultToNas(cfg.serverUrl, cfg.token, meta, encrypted, getDeviceIdentifier(), status.version);
+      const pushExecution = await runWithSyncFailover(cfg, (endpoint) =>
+        pushVaultToNas(
+          endpoint.serverUrl,
+          endpoint.token,
+          meta,
+          encrypted,
+          getDeviceIdentifier(),
+          endpoint.provider === statusExecution.endpoint.provider ? status.version : endpoint.remoteVersion
+        )
+      );
+      const res = pushExecution.result;
       if (res.success) {
-        const updatedCfg = {
-          ...cfg,
+        const updatedCfg = upsertSyncEndpoint(cfg, {
+          ...pushExecution.endpoint,
           lastSyncTime: res.updatedAt || new Date().toISOString(),
-          remoteVersion: res.version
-        };
+          remoteVersion: res.version,
+          dataHash: res.dataHash,
+          lastError: undefined,
+          lastReachableAt: new Date().toISOString()
+        }, true);
         saveNasSyncConfig(updatedCfg);
         setNasConfig(updatedCfg);
+        void replicateVaultToSecondary(updatedCfg, pushExecution.endpoint.provider, meta, encrypted, getDeviceIdentifier());
         return true;
       }
       return false;
@@ -499,10 +548,13 @@ export const App: React.FC = () => {
 
     nasTransferInFlightRef.current = true;
     try {
-      const status = await getNasSyncStatus(cfg.serverUrl, cfg.token);
-      if (!status.success || typeof status.version !== 'number' || status.version === cfg.remoteVersion) return;
+      const statusExecution = await runWithSyncFailover(cfg, (endpoint) =>
+        getNasSyncStatus(endpoint.serverUrl, endpoint.token)
+      );
+      const status = statusExecution.result;
+      if (!status.success || typeof status.version !== 'number' || status.version === statusExecution.endpoint.remoteVersion) return;
 
-      const pullRes = await pullVaultFromNas(cfg.serverUrl, cfg.token);
+      const pullRes = await pullVaultFromNas(statusExecution.endpoint.serverUrl, statusExecution.endpoint.token);
       if (!pullRes.success || !pullRes.vaultMeta || !pullRes.encryptedItems) return;
 
       const remoteItems = await decryptAllVaultItems(masterKey, pullRes.encryptedItems);
@@ -511,14 +563,17 @@ export const App: React.FC = () => {
       setVaultMeta(pullRes.vaultMeta);
       setItems(remoteItems);
 
-      const updatedCfg: NasSyncConfig = {
-        ...cfg,
+      const updatedCfg = upsertSyncEndpoint(cfg, {
+        ...statusExecution.endpoint,
         lastSyncTime: pullRes.updatedAt || new Date().toISOString(),
-        remoteVersion: pullRes.version ?? status.version
-      };
+        remoteVersion: pullRes.version ?? status.version,
+        dataHash: pullRes.dataHash,
+        lastError: undefined,
+        lastReachableAt: new Date().toISOString()
+      }, true);
       saveNasSyncConfig(updatedCfg);
       setNasConfig(updatedCfg);
-      addToast('info', `已自动获取其他客户端的更新，当前共 ${remoteItems.length} 项`);
+      addToast('info', `已从${statusExecution.endpoint.provider === 'aws' ? ' AWS' : '极空间 NAS'}${statusExecution.failedOver ? '备用方案' : ''}获取其他客户端的更新，当前共 ${remoteItems.length} 项`);
     } catch (error) {
       console.warn('[LiveSync] 获取其他客户端更新失败:', error);
     } finally {
@@ -555,14 +610,15 @@ export const App: React.FC = () => {
     if (!vaultMeta) return false;
     const result = await verifyMasterPassword(password, vaultMeta);
     if (result.success && result.masterKey) {
-      setMasterKey(result.masterKey);
-      setIsLocked(false);
-
       // 解锁成功后解密所有条目
       setIsLoading(true);
       try {
         const encryptedItems = loadStoredEncryptedItems();
         const decryptedList = await decryptAllVaultItems(result.masterKey, encryptedItems);
+        // 只有本地密文全集通过认证后才切换到解锁态，避免损坏/篡改
+        // 的缓存让界面进入“半解锁”状态或继续覆盖可信远端数据。
+        setMasterKey(result.masterKey);
+        setIsLocked(false);
         setItems(decryptedList);
         addToast('success', '密码数据库解锁成功');
 
@@ -571,7 +627,10 @@ export const App: React.FC = () => {
         if (cfg?.token) {
           (async () => {
             try {
-              const pullRes = await pullVaultFromNas(cfg.serverUrl, cfg.token);
+              const pullExecution = await runWithSyncFailover(cfg, (endpoint) =>
+                pullVaultFromNas(endpoint.serverUrl, endpoint.token)
+              );
+              const pullRes = pullExecution.result;
               if (pullRes.success && pullRes.encryptedItems) {
                 const remoteDecrypted = await decryptAllVaultItems(result.masterKey!, pullRes.encryptedItems);
                 const remoteEncrypted = pullRes.encryptedItems;
@@ -579,10 +638,17 @@ export const App: React.FC = () => {
                 if (pullRes.vaultMeta) saveStoredVaultMeta(pullRes.vaultMeta);
                 setItems(remoteDecrypted);
                 if (pullRes.vaultMeta) setVaultMeta(pullRes.vaultMeta);
-                const updatedCfg = { ...cfg, lastSyncTime: pullRes.updatedAt || new Date().toISOString(), remoteVersion: pullRes.version };
+                const updatedCfg = upsertSyncEndpoint(cfg, {
+                  ...pullExecution.endpoint,
+                  lastSyncTime: pullRes.updatedAt || new Date().toISOString(),
+                  remoteVersion: pullRes.version,
+                  dataHash: pullRes.dataHash,
+                  lastError: undefined,
+                  lastReachableAt: new Date().toISOString()
+                }, true);
                 saveNasSyncConfig(updatedCfg);
                 setNasConfig(updatedCfg);
-                addToast('info', `已从极空间刷新 ${remoteDecrypted.length} 项数据`);
+                addToast('info', `已从${pullExecution.endpoint.provider === 'aws' ? ' AWS' : '极空间 NAS'}${pullExecution.failedOver ? '备用方案' : ''}刷新 ${remoteDecrypted.length} 项数据`);
               }
             } catch (syncErr) {
               console.warn('[AutoSyncOnUnlock] 自动静默对齐异常:', syncErr);
@@ -591,7 +657,10 @@ export const App: React.FC = () => {
         }
       } catch (err) {
         console.error('解密金库条目异常:', err);
-        addToast('error', '部分密码条目解密异常');
+        setMasterKey(null);
+        setIsLocked(true);
+        setItems([]);
+        addToast('error', '本地金库密文校验失败，已拒绝解锁；请恢复可信备份');
       } finally {
         setIsLoading(false);
       }
@@ -619,33 +688,44 @@ export const App: React.FC = () => {
         items
       );
 
-      saveStoredVaultMeta(newMeta);
-      saveStoredEncryptedItems(newEncryptedItems);
-      setVaultMeta(newMeta);
-      setMasterKey(newMasterKey);
-
-      // 先把使用新密钥重加密后的密文推送成功，再更新 NAS 账号认证摘要。
-      // 这样登录凭据和云端密文始终成对切换，避免只改了一半导致多端无法登录。
+      // 认证摘要与新密文必须由服务端在同一个版本锁/灾备事务中提交。
+      // 不能拆成“先推密文、再改认证”，否则网络中断会产生半成功状态。
       const activeConfig = loadNasSyncConfig();
-      const pushed = await autoPushToNas(newMeta, items, newMasterKey);
       if (activeConfig?.token) {
-        if (!pushed) {
-          throw new Error('本地主密码已修改，但云端密文推送失败；同步账号认证摘要未更新，请保持当前会话并重试同步。');
-        }
         if (!activeConfig.salt) {
           throw new Error('缺少同步账号盐值，无法安全更新认证摘要。');
         }
-        const authUpdate = await updateNasAuthHash(
+        const remoteStatus = await getNasSyncStatus(activeConfig.serverUrl, activeConfig.token);
+        if (!remoteStatus.success || typeof remoteStatus.version !== 'number') {
+          throw new Error(remoteStatus.message || '无法确认云端版本，已取消改密');
+        }
+        const atomicChange = await changeNasAccountPassword(
           activeConfig.serverUrl,
           activeConfig.token,
           activeConfig.username,
           newPass,
-          activeConfig.salt
+          activeConfig.salt,
+          newMeta,
+          newEncryptedItems,
+          remoteStatus.version,
+          getDeviceIdentifier()
         );
-        if (!authUpdate.success) {
-          throw new Error(authUpdate.message || '同步账号认证摘要更新失败');
+        if (!atomicChange.success) {
+          throw new Error(atomicChange.message || '主密码与云端密文原子更新失败');
         }
+        const updatedConfig = {
+          ...activeConfig,
+          lastSyncTime: atomicChange.updatedAt || new Date().toISOString(),
+          remoteVersion: atomicChange.version
+        };
+        saveNasSyncConfig(updatedConfig);
+        setNasConfig(updatedConfig);
       }
+
+      saveStoredVaultMeta(newMeta);
+      saveStoredEncryptedItems(newEncryptedItems);
+      setVaultMeta(newMeta);
+      setMasterKey(newMasterKey);
 
       addToast('success', '金库主密码已成功修改！全库凭据已全部使用新密钥重加密完成。');
       return true;
@@ -668,7 +748,14 @@ export const App: React.FC = () => {
       return;
     }
 
-    const encryptedItem = await encryptVaultItem(masterKey, itemData, existingId);
+    const previousItem = existingId ? items.find((item) => item.id === existingId) : undefined;
+    const now = new Date().toISOString();
+    const recordForEncryption = {
+      ...itemData,
+      createdAt: previousItem?.createdAt || now,
+      updatedAt: now
+    };
+    const encryptedItem = await encryptVaultItem(masterKey, recordForEncryption, existingId);
     const storedItems = loadStoredEncryptedItems();
 
     let updatedEncryptedItems: EncryptedVaultItem[];
@@ -684,8 +771,8 @@ export const App: React.FC = () => {
     const updatedDecrypted: DecryptedVaultItem = {
       ...itemData,
       id: encryptedItem.id,
-      createdAt: encryptedItem.createdAt,
-      updatedAt: encryptedItem.updatedAt
+      createdAt: recordForEncryption.createdAt,
+      updatedAt: recordForEncryption.updatedAt
     };
 
     let newItems: DecryptedVaultItem[];
@@ -894,13 +981,15 @@ export const App: React.FC = () => {
       const newDecryptedItems: DecryptedVaultItem[] = [];
 
       for (const itemData of importedList) {
-        const encrypted = await encryptVaultItem(masterKey, itemData);
+        const now = new Date().toISOString();
+        const recordForEncryption = { ...itemData, createdAt: now, updatedAt: now };
+        const encrypted = await encryptVaultItem(masterKey, recordForEncryption);
         newEncryptedItems.push(encrypted);
         newDecryptedItems.push({
           ...itemData,
           id: encrypted.id,
-          createdAt: encrypted.createdAt,
-          updatedAt: encrypted.updatedAt
+          createdAt: now,
+          updatedAt: now
         });
       }
 

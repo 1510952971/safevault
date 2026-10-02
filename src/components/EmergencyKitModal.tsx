@@ -73,7 +73,7 @@ export const EmergencyKitModal: React.FC<EmergencyKitModalProps> = ({
 
     <div class="warning-box">
       <strong>⚠️ 绝密离线凭证使用准则：</strong>
-      由于 SafeVault 采用纯前端零知识加密（PBKDF2 100,000 轮 + AES-GCM-256），主密码绝不上传任何服务器。若遗忘主密码且未备份，数据将永久不可恢复。请将本页妥善存放于实体保险箱中。
+      由于 SafeVault 采用纯前端零知识加密（PBKDF2 600,000 轮 + 随机 DEK + AES-GCM-256），主密码绝不上传任何服务器。若遗忘主密码且没有仍处于解锁状态的可信设备，数据将永久不可恢复。请将本页妥善存放于实体保险箱中。
     </div>
 
     <div class="handwriting-zone">
@@ -224,7 +224,7 @@ export const EmergencyKitModal: React.FC<EmergencyKitModalProps> = ({
 
           {/* 水印底栏 */}
           <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[10px] font-mono text-slate-400">
-            <span>SECURE VAULT ARCHITECTURE // PBKDF2-100K // AES-GCM-256</span>
+            <span>SECURE VAULT ARCHITECTURE // PBKDF2-600K // RANDOM-DEK // AES-GCM-256</span>
             <span>SAFEVAULT DEFENSE SYSTEM</span>
           </div>
         </div>

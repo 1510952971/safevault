@@ -10,7 +10,7 @@ import assert from 'node:assert';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
-const PBKDF2_ITERATIONS = 100000;
+const PBKDF2_ITERATIONS = 600000;
 
 function bufferToBase64(buffer) {
   return Buffer.from(buffer).toString('base64');
@@ -49,6 +49,9 @@ async function encryptVaultItem(masterKey, itemData, existingId) {
   const now = new Date().toISOString();
 
   const payload = {
+    id,
+    title: itemData.title,
+    category: itemData.category,
     username: itemData.username,
     password: itemData.password,
     website: itemData.website,
@@ -57,7 +60,11 @@ async function encryptVaultItem(masterKey, itemData, existingId) {
     customFields: itemData.customFields,
     passwordHistory: itemData.passwordHistory,
     isDeleted: itemData.isDeleted,
-    deletedAt: itemData.deletedAt
+    deletedAt: itemData.deletedAt,
+    isFavorite: itemData.isFavorite,
+    tags: itemData.tags,
+    createdAt: itemData.createdAt || now,
+    updatedAt: itemData.updatedAt || now
   };
 
   const payloadString = JSON.stringify(payload);
@@ -65,53 +72,33 @@ async function encryptVaultItem(masterKey, itemData, existingId) {
   const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
 
   const cipherBuffer = await globalThis.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv, additionalData: textEncoder.encode(`SafeVault:VaultItem:v3:${id}`) },
     masterKey,
     payloadBytes
   );
 
   return {
+    encryptionVersion: 3,
     id,
-    title: itemData.title,
-    category: itemData.category,
-    cipherText: bufferToBase64(new Uint8Array(cipherBuffer)),
-    iv: bufferToBase64(iv),
-    createdAt: itemData.createdAt || now,
-    updatedAt: now,
-    isFavorite: itemData.isFavorite
+    encryptedPayload: bufferToBase64(new Uint8Array(cipherBuffer)),
+    iv: bufferToBase64(iv)
   };
 }
 
 async function decryptVaultItem(masterKey, encryptedItem) {
   const iv = base64ToBuffer(encryptedItem.iv);
-  const cipherBytes = base64ToBuffer(encryptedItem.cipherText);
+  const cipherBytes = base64ToBuffer(encryptedItem.encryptedPayload);
 
   const decryptedBuffer = await globalThis.crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv, additionalData: textEncoder.encode(`SafeVault:VaultItem:v3:${encryptedItem.id}`) },
     masterKey,
     cipherBytes
   );
 
   const payloadString = textDecoder.decode(decryptedBuffer);
   const payload = JSON.parse(payloadString);
-
-  return {
-    id: encryptedItem.id,
-    title: encryptedItem.title,
-    category: encryptedItem.category,
-    username: payload.username,
-    password: payload.password,
-    website: payload.website,
-    notes: payload.notes,
-    totpSecret: payload.totpSecret,
-    customFields: payload.customFields,
-    passwordHistory: payload.passwordHistory,
-    isDeleted: payload.isDeleted,
-    deletedAt: payload.deletedAt,
-    isFavorite: encryptedItem.isFavorite,
-    createdAt: encryptedItem.createdAt,
-    updatedAt: encryptedItem.updatedAt
-  };
+  assert.strictEqual(payload.id, encryptedItem.id, '密文载荷中的条目标识必须与外壳一致');
+  return payload;
 }
 
 function mockAudit(items) {
@@ -148,7 +135,7 @@ async function runTests() {
   };
 
   const encryptedItem = await encryptVaultItem(masterKey, itemWithCustomFields);
-  assert.strictEqual(typeof encryptedItem.cipherText, 'string');
+  assert.strictEqual(typeof encryptedItem.encryptedPayload, 'string');
   assert.strictEqual(typeof encryptedItem.iv, 'string');
 
   const decryptedItem = await decryptVaultItem(masterKey, encryptedItem);
@@ -229,6 +216,11 @@ async function runTests() {
   assert.ok(!rawOuterKeys.includes('passwordHistory'), '外壳绝对不能出现明文 passwordHistory');
   assert.ok(!rawOuterKeys.includes('password'), '外壳绝对不能出现明文 password');
   assert.ok(!rawOuterKeys.includes('username'), '外壳绝对不能出现明文 username');
+  assert.ok(!rawOuterKeys.includes('title'), 'v3 外壳绝对不能出现明文 title');
+  assert.ok(!rawOuterKeys.includes('category'), 'v3 外壳绝对不能出现明文 category');
+  assert.ok(!rawOuterKeys.includes('website'), 'v3 外壳绝对不能出现明文 website');
+  assert.ok(!encryptedItem.encryptedPayload.includes('银行金融金库'), '密文编码不应直接包含标题');
+  assert.ok(!encryptedItem.encryptedPayload.includes('finance_master'), '密文编码不应直接包含用户名');
   console.log('  -> 验证通过：自定义字段与历史记录皆深藏于 AES-GCM 密文载荷中');
 
   // 5. 阶梯式防暴力破解冷却梯度测试

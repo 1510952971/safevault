@@ -176,7 +176,7 @@ export const TacticalDefensePanel: React.FC<TacticalDefensePanelProps> = ({
               <Cpu className="w-4 h-4 text-slate-400 shrink-0" />
               <span>PBKDF2 算力拉伸</span>
             </div>
-            <span className="font-mono font-bold text-slate-800 shrink-0">100,000 轮</span>
+            <span className="font-mono font-bold text-slate-800 shrink-0">600,000 轮</span>
           </div>
 
           {/* 弱密码风险审计 */}

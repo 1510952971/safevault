@@ -1,5 +1,7 @@
 # 个人私密密码保险箱小程序 (SafeVault) 需求规格说明书 (SPEC.md)
 
+> 安全协议以 [安全架构与部署基线](SECURITY_ARCHITECTURE.md) 为准。本文件中早期的 100,000 轮、明文元数据和纯本地离线描述属于历史规格，不能覆盖当前实现。
+
 > **版本**：v1.0.0-Release  
 > **状态**：已批准 (Approved) —— 研发执行不可动摇之最高宪法  
 > **体系依据**：《基于大语言模型的软件与网站工程全流程精细化实操范式及 Skill 架构体系》
@@ -16,8 +18,8 @@ SafeVault 是一款专为个人打造的**高安全性、零知识架构（Zero-
    - 初次使用引导设置全局唯一主密码（Master Password）。
    - 每次进入必须验证主密码；支持“超时自动锁定”（1/3/5分钟无操作锁屏）。
 2. **零知识强加密引擎 (Web Crypto API)**：
-   - 采用标准 **PBKDF2-SHA256**（100,000 次哈希迭代）派生 256-bit AES 密钥。
-   - 密码条目数据采用 **AES-GCM-256**（认证加密算法，每次加密使用独立 96-bit 随机 IV）强加密。
+   - 新金库采用 **PBKDF2-SHA256 600,000 次迭代**派生 KEK，KEK 只解包随机 256-bit 金库数据密钥；旧金库按记录参数兼容读取。
+   - 新版整条密码记录采用 **AES-GCM-256**（认证加密算法，每次加密使用独立 96-bit 随机 IV 与条目标识 AAD）强加密。
    - 所有明文仅在内存中即时计算，数据落盘与持久化存储 **100% 为密文字符串**，杜绝任何明文落盘。
 3. **密码条目全生命周期管理 (CRUD)**：
    - 字段包括：标题/平台名、分类标签（网站/社交/工作/金融/游戏/其它）、账号/用户名、加密密码、官方网址、备注说明。
@@ -30,8 +32,8 @@ SafeVault 是一款专为个人打造的**高安全性、零知识架构（Zero-
    - 支持 8 ~ 32 位长度滑块无级调节。
    - 支持自由勾选：大写字母 (A-Z)、小写字母 (a-z)、阿拉伯数字 (0-9)、特殊字符 (!@#$%^&*)，支持一键排除易混淆字符 (0/O, 1/l/I)。
    - 实时密码安全强度计算与视觉指示条（弱/中/强/极强）。
-6. **纯本地离线持久化与密文灾备**：
-   - 数据 100% 保存于本地浏览器沙箱存储（LocalStorage / IndexedDB），无任何外部云端网络请求。
+6. **本地密文缓存与私有同步灾备**：
+   - 客户端本地只保存密文缓存；启用极空间同步时，NAS 保存的仍是客户端密文，服务器不持有主密码或 DEK。
    - 提供“一键导出加密备份文件（`.safevault.json`）”与“导入恢复数据”功能。备份文件本身也是通过主密码进行 AES-GCM 强加密包裹的密文。
 7. **NAS 私有化部署与 PWA 跨端支持 (Home NAS Ready)**：
    - 支持通过 Docker / Docker Compose 一键部署到群晖、威联通、绿联、极空间等家用 NAS，或直接将静态单页托管于 NAS Web Station。
@@ -62,14 +64,12 @@ interface VaultMeta {
 ### 2.2 密文存储条目实体 (`EncryptedVaultItem`)
 ```typescript
 interface EncryptedVaultItem {
-  id: string;                  // UUID
-  title: string;               // 平台/应用名称 (明文索引)
-  category: 'website' | 'work' | 'finance' | 'social' | 'game' | 'other';
-  website?: string;            // 网站登录链接 (可选)
-  encryptedPayload: string;    // Base64: 包含 { username, password, notes } 的 JSON 经 AES-GCM-256 加密后的密文
+  encryptionVersion?: 2 | 3;
+  id: string;                  // 随机 UUID；唯一可见标识
+  encryptedPayload: string;    // Base64: 包含完整记录的 AES-GCM-256 密文
   iv: string;                  // Base64: 每次加密生成的 12 字节随机 IV
-  createdAt: string;           // ISO 8601
-  updatedAt: string;           // ISO 8601
+  createdAt?: string;          // 仅旧格式兼容字段
+  updatedAt?: string;          // 仅旧格式兼容字段
 }
 ```
 
@@ -106,11 +106,11 @@ interface VaultBackupFile {
 ```
 [用户输入主密码] 
        ↓
-[PBKDF2-SHA256 (迭代 100,000 次 + salt)] ──> 生成 256 位 Master Key (AES-GCM)
+[PBKDF2-SHA256 (新金库 600,000 次 + salt)] ──> 生成 KEK
        ↓
-[尝试解密 meta.testCipher]
+[AES-GCM 解包随机 256 位 DEK，再验证 meta.testCipher]
        ├──> 失败 (Tag 不匹配): 提示“主密码错误”，严禁进入
-       └──> 成功 ("SAFEVAULT_TOKEN"): 认证通过，持有临时内存会话
+       └──> 成功 ("SAFEVAULT_TOKEN"): 认证通过，持有临时内存 DEK 会话
                ↓
 [动态解密列表 items] ──> 在渲染视图中展示脱敏卡片
 ```

@@ -9,6 +9,9 @@
 import { VaultMeta, EncryptedVaultItem, DecryptedVaultItem, VaultBackupFile, EncryptedVaultBackupFile, CategoryType, CategoryMeta } from '../types/vault';
 import { deriveKeyFromMasterPassword, bufferToBase64, base64ToBuffer, CURRENT_PBKDF2_ITERATIONS } from './crypto';
 
+const ENCRYPTED_BACKUP_AAD = new TextEncoder().encode('SafeVault:EncryptedBackup:v2');
+const MAX_BACKUP_KDF_ITERATIONS = 2_000_000;
+
 const STORAGE_KEY_META = 'safevault_meta_v1';
 const STORAGE_KEY_ITEMS = 'safevault_encrypted_items_v1';
 
@@ -91,33 +94,7 @@ export function resetEntireVault(): void {
  * 导出离线备份文件 (.safevault.json)
  */
 export function exportVaultBackup(): void {
-  const meta = loadStoredVaultMeta();
-  const items = loadStoredEncryptedItems();
-
-  if (!meta) {
-    throw new Error('未初始化的金库无法导出备份');
-  }
-
-  const backupData: VaultBackupFile = {
-    app: 'SafeVault',
-    exportVersion: '1.0',
-    exportedAt: new Date().toISOString(),
-    meta,
-    items
-  };
-
-  const jsonStr = JSON.stringify(backupData, null, 2);
-  const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-
-  const dateStr = new Date().toISOString().slice(0, 10);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `SafeVault_Backup_${dateStr}.safevault.json`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
+  throw new Error('出于安全考虑，明文外壳备份已停用，请使用“整体加密备份”');
 }
 
 /** 导出整体加密备份：外层不再暴露标题、网址、分类或金库元数据。 */
@@ -131,10 +108,10 @@ export async function exportEncryptedVaultBackup(masterPassword: string): Promis
   const key = await deriveKeyFromMasterPassword(masterPassword, salt, CURRENT_PBKDF2_ITERATIONS);
   const plaintext = new TextEncoder().encode(JSON.stringify({ meta, items }));
   const ciphertext = await window.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: iv as BufferSource }, key, plaintext
+    { name: 'AES-GCM', iv: iv as BufferSource, additionalData: ENCRYPTED_BACKUP_AAD as BufferSource }, key, plaintext
   );
   const backup: EncryptedVaultBackupFile = {
-    app: 'SafeVault', backupVersion: '2.0', kdf: 'PBKDF2-SHA256', iterations: 100000,
+    app: 'SafeVault', backupVersion: '2.0', encryptionVersion: 2, kdf: 'PBKDF2-SHA256', iterations: CURRENT_PBKDF2_ITERATIONS,
     salt: bufferToBase64(salt), iv: bufferToBase64(iv),
     ciphertext: bufferToBase64(new Uint8Array(ciphertext)), exportedAt: new Date().toISOString()
   };
@@ -151,9 +128,18 @@ export async function parseAndDecryptBackup(jsonText: string, masterPassword: st
     return parseAndValidateBackup(jsonText);
   }
   try {
-    const key = await deriveKeyFromMasterPassword(masterPassword, base64ToBuffer(parsed.salt));
+    const iterations = Number(parsed.iterations);
+    if (!Number.isInteger(iterations) || iterations < 100000 || iterations > MAX_BACKUP_KDF_ITERATIONS) {
+      throw new Error('备份 KDF 参数无效');
+    }
+    const key = await deriveKeyFromMasterPassword(masterPassword, base64ToBuffer(parsed.salt), iterations);
+    const decryptParams = {
+      name: 'AES-GCM',
+      iv: base64ToBuffer(parsed.iv) as BufferSource,
+      ...(parsed.encryptionVersion === 2 ? { additionalData: ENCRYPTED_BACKUP_AAD as BufferSource } : {})
+    };
     const plaintext = await window.crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: base64ToBuffer(parsed.iv) as BufferSource }, key, base64ToBuffer(parsed.ciphertext) as BufferSource
+      decryptParams, key, base64ToBuffer(parsed.ciphertext) as BufferSource
     );
     return parseAndValidateBackup(new TextDecoder().decode(plaintext));
   } catch {

@@ -34,9 +34,16 @@ import {
   mergeVaultItems,
   getDeviceIdentifier,
   normalizeServerUrl,
-  getDefaultNasServerUrl
+  getDefaultNasServerUrl,
+  SyncProviderId,
+  SyncEndpointConfig,
+  getSyncEndpoint,
+  upsertSyncEndpoint,
+  activateSyncProvider,
+  runWithSyncFailover,
+  replicateVaultToSecondary
 } from '../utils/sync';
-import { VaultMeta, DecryptedVaultItem } from '../types/vault';
+import { VaultMeta, EncryptedVaultItem, DecryptedVaultItem } from '../types/vault';
 import { encryptVaultItem, decryptAllVaultItems } from '../utils/crypto';
 import { saveStoredVaultMeta, saveStoredEncryptedItems } from '../utils/storage';
 
@@ -63,6 +70,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
 }) => {
   const [syncConfig, setSyncConfig] = useState<NasSyncConfig | null>(null);
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+  const [selectedProvider, setSelectedProvider] = useState<SyncProviderId>('nas');
 
   // 输入表单状态
   const [serverUrl, setServerUrl] = useState(getDefaultNasServerUrl);
@@ -85,9 +93,38 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
   const [editUrlInput, setEditUrlInput] = useState('');
   const [isSavingUrl, setIsSavingUrl] = useState(false);
 
+  const selectedEndpoint = syncConfig ? getSyncEndpoint(syncConfig, selectedProvider) : null;
+  const providerLabel = selectedProvider === 'aws' ? 'AWS 同步服务器' : '极空间 NAS + Cloudflare Tunnel';
+
+  const selectProvider = (provider: SyncProviderId) => {
+    setSelectedProvider(provider);
+    const endpoint = syncConfig ? getSyncEndpoint(syncConfig, provider) : null;
+    setServerUrl(endpoint?.serverUrl || (provider === 'nas' ? getDefaultNasServerUrl() : ''));
+    setUsername(endpoint?.username || syncConfig?.username || '');
+    setHealthStatus(null);
+  };
+
+  const persistEndpointResult = (
+    config: NasSyncConfig,
+    endpoint: SyncEndpointConfig,
+    patch: Partial<SyncEndpointConfig> = {},
+    activate = true
+  ) => {
+    const nextEndpoint: SyncEndpointConfig = {
+      ...endpoint,
+      ...patch,
+      lastError: undefined,
+      lastReachableAt: new Date().toISOString()
+    };
+    const nextConfig = upsertSyncEndpoint(config, nextEndpoint, activate);
+    saveNasSyncConfig(nextConfig);
+    setSyncConfig(nextConfig);
+    return nextConfig;
+  };
+
   // 保存并更新 NAS 网址 (无感切换，不丢失登录会话与 Token)
   const handleSaveEditedUrl = async () => {
-    if (!editUrlInput.trim() || !syncConfig) return;
+    if (!editUrlInput.trim() || !syncConfig || !selectedEndpoint) return;
     const cleanUrl = normalizeServerUrl(editUrlInput);
     setIsSavingUrl(true);
     const health = await checkNasHealth(cleanUrl);
@@ -96,12 +133,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
       const proceed = window.confirm(`⚠️ 连通性测试未通过：${health.message || '无法连接该网址'}\n\n是否仍要强制保存该网址？`);
       if (!proceed) return;
     }
-    const updatedCfg: NasSyncConfig = {
-      ...syncConfig,
-      serverUrl: cleanUrl
-    };
-    saveNasSyncConfig(updatedCfg);
-    setSyncConfig(updatedCfg);
+    const updatedCfg = persistEndpointResult(syncConfig, selectedEndpoint, { serverUrl: cleanUrl }, selectedProvider === (syncConfig.activeProvider || syncConfig.provider || 'nas'));
     onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
     setIsEditingUrl(false);
     addToast('success', `极空间同步网址已成功更新为：${cleanUrl}`);
@@ -110,16 +142,19 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
   const refreshBackups = async (config: NasSyncConfig | null = syncConfig) => {
     if (!config?.token) return;
     setIsLoadingBackups(true);
-    const result = await getNasBackups(config.serverUrl, config.token);
+    const execution = await runWithSyncFailover(config, (endpoint) =>
+      getNasBackups(endpoint.serverUrl, endpoint.token)
+    );
+    const result = execution.result;
     setIsLoadingBackups(false);
     if (result.success) {
       setBackups(result.backups || []);
       if (typeof result.currentVersion === 'number') {
         setCurrentRemoteVersion(result.currentVersion);
-        const updatedConfig = { ...config, remoteVersion: result.currentVersion };
-        saveNasSyncConfig(updatedConfig);
-        setSyncConfig(updatedConfig);
+        persistEndpointResult(config, execution.endpoint, { remoteVersion: result.currentVersion });
       }
+    } else if (execution.failedOver) {
+      addToast('info', `当前同步方案不可用，已切换到${execution.endpoint.provider === 'aws' ? ' AWS' : '极空间 NAS'}备用方案`);
     }
   };
 
@@ -128,11 +163,14 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
       const cfg = loadNasSyncConfig();
       setSyncConfig(cfg);
       if (cfg) {
-        setServerUrl(cfg.serverUrl || window.location.origin);
-        setUsername(cfg.username);
-        setIsAutoSync(cfg.autoSync);
-        setCurrentRemoteVersion(cfg.remoteVersion ?? null);
-        void refreshBackups(cfg);
+        const provider = cfg.activeProvider || cfg.provider || 'nas';
+        setSelectedProvider(provider);
+        const endpoint = getSyncEndpoint(cfg, provider);
+        setServerUrl(endpoint?.serverUrl || window.location.origin);
+        setUsername(endpoint?.username || cfg.username);
+        setIsAutoSync(endpoint?.autoSync ?? cfg.autoSync);
+        setCurrentRemoteVersion(endpoint?.remoteVersion ?? cfg.remoteVersion ?? null);
+        if (endpoint) void refreshBackups(cfg);
       } else {
         // 若当前处于 NAS 容器托管的网页下，自动预填当前 origin
         if (window.location.port === '8088' || window.location.pathname.startsWith('/')) {
@@ -149,7 +187,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
   // 测试极空间连通性
   const handleCheckHealth = async () => {
     if (!serverUrl.trim()) {
-      addToast('error', '请输入极空间 NAS 网址');
+      addToast('error', `请输入${providerLabel}网址`);
       return;
     }
     setIsCheckingHealth(true);
@@ -157,8 +195,8 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
     const result = await checkNasHealth(serverUrl);
     setIsCheckingHealth(false);
     if (result.success) {
-      setHealthStatus(`✅ 成功连通极空间服务 (${result.name} v${result.version}，用户数: ${result.userCount})`);
-      addToast('success', '极空间 NAS 服务在线，通信正常！');
+      setHealthStatus(`✅ 成功连通 SafeVault 服务 (${result.name} v${result.version}，用户数: ${result.userCount})`);
+      addToast('success', `${providerLabel}在线，通信正常！`);
     } else {
       setHealthStatus(`❌ 连接失败: ${result.message}`);
       addToast('error', result.message || '连接失败');
@@ -169,7 +207,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!serverUrl.trim()) {
-      addToast('error', '请填写极空间 NAS 访问网址');
+      addToast('error', `请填写${providerLabel}访问网址`);
       return;
     }
     if (!username.trim()) {
@@ -183,54 +221,77 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      if (activeTab === 'register') {
-        const res = await registerNasAccount(serverUrl, username, masterPassword);
-        if (res.success && res.salt) {
-          const newCfg: NasSyncConfig = {
-            serverUrl: normalizeServerUrl(serverUrl),
-            username: username.trim().toLowerCase(),
-            token: res.token || '',
-            salt: res.salt,
-            lastSyncTime: null,
-            autoSync: isAutoSync,
-            remoteVersion: res.version
-          };
-          saveNasSyncConfig(newCfg);
-          setSyncConfig(newCfg);
-          addToast('success', '极空间账号注册并绑定成功！');
-          onSyncStatusChanged?.(true, null);
-          setCurrentRemoteVersion(res.version ?? null);
-          void refreshBackups(newCfg);
+      const res = activeTab === 'register'
+        ? await registerNasAccount(serverUrl, username, masterPassword)
+        : await loginNasAccount(serverUrl, username, masterPassword);
+
+      if (!res.success || !res.salt) {
+        if (activeTab === 'register' && res.message && (res.message.includes('已存在') || res.message.includes('409'))) {
+          addToast('info', `💡 该账号在${providerLabel}中已存在，已自动切换到【登录】模式！`);
+          setActiveTab('login');
         } else {
-          if (res.message && (res.message.includes('已存在') || res.message.includes('409'))) {
-            addToast('info', '💡 该账号在极空间中已存在，已自动为您切换至【登录】模式！');
-            setActiveTab('login');
-          } else {
-            addToast('error', res.message || '注册失败');
-          }
+          addToast('error', res.message || `${providerLabel}${activeTab === 'register' ? '注册' : '登录'}失败`);
         }
-      } else {
-        const res = await loginNasAccount(serverUrl, username, masterPassword);
-        if (res.success && res.salt) {
-          const newCfg: NasSyncConfig = {
-            serverUrl: normalizeServerUrl(serverUrl),
-            username: username.trim().toLowerCase(),
-            token: res.token || '',
-            salt: res.salt,
-            lastSyncTime: null,
-            autoSync: isAutoSync,
-            remoteVersion: res.version
-          };
-          saveNasSyncConfig(newCfg);
-          setSyncConfig(newCfg);
-          addToast('success', '极空间账号登录成功，已联机！');
-          onSyncStatusChanged?.(true, null);
-          setCurrentRemoteVersion(res.version ?? null);
-          void refreshBackups(newCfg);
+        return;
+      }
+
+      const cleanUrl = normalizeServerUrl(serverUrl);
+      const cleanUser = username.trim().toLowerCase();
+      let remoteVersion = res.version;
+      let lastSyncTime = res.updatedAt || null;
+      let dataHash: string | undefined;
+
+      // 为已登录的另一端首次绑定时，只在目标端为空时复制当前本地密文；
+      // 目标端已有数据则只绑定，不盲目覆盖，防止切换时误删数据。
+      if (syncConfig && masterKey && vaultMeta) {
+        const remote = await pullVaultFromNas(cleanUrl, res.token || '');
+        if (!remote.success) throw new Error(remote.message || `${providerLabel}数据状态读取失败`);
+        if (remote.vaultMeta?.testCipher || (remote.encryptedItems?.length || 0) > 0) {
+          remoteVersion = remote.version ?? remoteVersion;
+          lastSyncTime = remote.updatedAt || lastSyncTime;
+          dataHash = remote.dataHash;
+          if (selectedProvider !== (syncConfig.activeProvider || syncConfig.provider || 'nas')) {
+            addToast('info', `${providerLabel}已有独立数据，已安全绑定但未覆盖；切换前请先执行一次拉取或智能合并。`);
+          }
         } else {
-          addToast('error', res.message || '登录失败，请检查账号或密码');
+          const encryptedItems = [];
+          for (const item of items) encryptedItems.push(await encryptVaultItem(masterKey, item, item.id));
+          const seeded = await pushVaultToNas(
+            cleanUrl,
+            res.token || '',
+            vaultMeta,
+            encryptedItems,
+            getDeviceIdentifier(),
+            remote.version ?? res.version
+          );
+          if (!seeded.success) throw new Error(seeded.message || `${providerLabel}初始化复制失败`);
+          remoteVersion = seeded.version ?? remoteVersion;
+          lastSyncTime = seeded.updatedAt || lastSyncTime;
+          dataHash = seeded.dataHash;
         }
       }
+
+      const endpoint: SyncEndpointConfig = {
+        provider: selectedProvider,
+        serverUrl: cleanUrl,
+        username: cleanUser,
+        token: res.token || '',
+        salt: res.salt,
+        lastSyncTime,
+        autoSync: isAutoSync,
+        remoteVersion,
+        dataHash
+      };
+      const newCfg = upsertSyncEndpoint(syncConfig, endpoint, true);
+      saveNasSyncConfig(newCfg);
+      setSyncConfig(newCfg);
+      setSelectedProvider(selectedProvider);
+      setServerUrl(cleanUrl);
+      setUsername(cleanUser);
+      addToast('success', `${providerLabel}${activeTab === 'register' ? '账号注册' : '账号登录'}成功，当前已设为主同步方案。`);
+      onSyncStatusChanged?.(true, newCfg.lastSyncTime);
+      setCurrentRemoteVersion(newCfg.remoteVersion ?? null);
+      void refreshBackups(newCfg);
     } finally {
       setIsSubmitting(false);
     }
@@ -245,14 +306,28 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
     setIsSyncing(true);
     try {
       // 1. 先拉取云端数据
-      const pullRes = await pullVaultFromNas(syncConfig.serverUrl, syncConfig.token);
+      const pullExecution = await runWithSyncFailover(syncConfig, (endpoint) =>
+        pullVaultFromNas(endpoint.serverUrl, endpoint.token)
+      );
+      const pullRes = pullExecution.result;
+      if (pullExecution.failedOver) {
+        addToast('info', `主方案暂时不可用，已从${pullExecution.endpoint.provider === 'aws' ? ' AWS' : '极空间 NAS'}备用方案读取数据。`);
+      }
+      if (!pullRes.success) {
+        addToast('error', pullRes.message || '无法从任一同步方案读取数据，已停止智能同步');
+        return;
+      }
       let remoteDecrypted: DecryptedVaultItem[] = [];
 
       if (pullRes.success && pullRes.encryptedItems && pullRes.encryptedItems.length > 0) {
         try {
           remoteDecrypted = await decryptAllVaultItems(masterKey, pullRes.encryptedItems);
         } catch (decryptErr) {
-          console.warn('解密云端条目部分或全部失败，将仅合并成功解密部分:', decryptErr);
+          // 密文校验失败时必须停止整个合并流程；部分合并会把篡改/损坏
+          // 的云端数据伪装成“缺失条目”，进而覆盖或删除本地可信数据。
+          console.warn('云端金库密文校验失败，已停止智能同步:', decryptErr);
+          addToast('error', '云端金库密文校验失败，已停止同步；请先恢复可信备份');
+          return;
         }
       }
 
@@ -263,7 +338,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
       );
 
       // 3. 重新加密合并后的全量条目
-      const mergedEncrypted = [];
+      const mergedEncrypted: EncryptedVaultItem[] = [];
       for (const item of mergedItems) {
         const enc = await encryptVaultItem(masterKey, item, item.id);
         mergedEncrypted.push(enc);
@@ -271,14 +346,19 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
 
       // 4. 将合并后的全集推送到极空间持久化
       const effectiveMeta = pullRes.vaultMeta || vaultMeta;
-      const pushRes = await pushVaultToNas(
-        syncConfig.serverUrl,
-        syncConfig.token,
-        effectiveMeta,
-        mergedEncrypted,
-        getDeviceIdentifier(),
-        pullRes.version
+      const pushExecution = await runWithSyncFailover(syncConfig, (endpoint) =>
+        pushVaultToNas(
+          endpoint.serverUrl,
+          endpoint.token,
+          effectiveMeta,
+          mergedEncrypted,
+          getDeviceIdentifier(),
+          endpoint.provider === pullExecution.endpoint.provider
+            ? pullRes.version
+            : endpoint.remoteVersion
+        )
       );
+      const pushRes = pushExecution.result;
 
       if (pushRes.success) {
         // 5. 更新本地持久化与内存状态
@@ -286,23 +366,32 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
         saveStoredEncryptedItems(mergedEncrypted);
         onVaultUpdatedFromRemote(effectiveMeta, mergedItems);
 
-        const updatedCfg = {
-          ...syncConfig,
+        const updatedCfg = persistEndpointResult(syncConfig, pushExecution.endpoint, {
           lastSyncTime: pushRes.updatedAt || new Date().toISOString(),
-          remoteVersion: pushRes.version
-        };
-        saveNasSyncConfig(updatedCfg);
-        setSyncConfig(updatedCfg);
+          remoteVersion: pushRes.version,
+          dataHash: pushRes.dataHash
+        });
         onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
         setCurrentRemoteVersion(pushRes.version ?? null);
         void refreshBackups(updatedCfg);
+
+        const replication = await replicateVaultToSecondary(
+          updatedCfg,
+          pushExecution.endpoint.provider,
+          effectiveMeta,
+          mergedEncrypted,
+          getDeviceIdentifier()
+        );
+        if (replication.conflictedProviders.length > 0) {
+          addToast('info', '另一同步端检测到独立更新，已保留其数据并停止自动覆盖；请在确认后执行智能合并。');
+        }
 
         addToast(
           'success',
           `双向同步完成！已安全合并共 ${mergedItems.length} 条凭据（吸收云端 ${addedFromRemote} 条，更新 ${updatedFromRemote} 条，保留本地 ${retainedLocalOnly} 条）`
         );
       } else {
-        addToast('error', pushRes.message || '双向同步推送到极空间失败');
+        addToast('error', pushRes.message || '双向同步推送失败');
       }
     } catch (err: unknown) {
       addToast('error', err instanceof Error ? err.message : '双向同步异常，请检查网络或主密码是否一致');
@@ -320,8 +409,13 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
 
     // 防误覆盖安全预检：先获取极空间云端凭据数量，并锁定本次推送基线版本
     let expectedVersion: number | undefined;
+    let preflightEndpoint: SyncEndpointConfig | null = null;
     try {
-      const status = await getNasSyncStatus(syncConfig.serverUrl, syncConfig.token);
+      const statusExecution = await runWithSyncFailover(syncConfig, (endpoint) =>
+        getNasSyncStatus(endpoint.serverUrl, endpoint.token)
+      );
+      const status = statusExecution.result;
+      preflightEndpoint = statusExecution.endpoint;
       expectedVersion = status.version;
       if (status.success && status.hasData && typeof status.itemsCount === 'number') {
         if (items.length < status.itemsCount) {
@@ -347,33 +441,44 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
     setIsSyncing(true);
     try {
       // 重新加密当前所有内存条目以确保数据最新
-      const encryptedItems = [];
+          const encryptedItems: EncryptedVaultItem[] = [];
       for (const item of items) {
         const enc = await encryptVaultItem(masterKey, item, item.id);
         encryptedItems.push(enc);
       }
 
-      const res = await pushVaultToNas(
-        syncConfig.serverUrl,
-        syncConfig.token,
-        vaultMeta,
-        encryptedItems,
-        getDeviceIdentifier(),
-        expectedVersion
+      const pushExecution = await runWithSyncFailover(syncConfig, (endpoint) =>
+        pushVaultToNas(
+          endpoint.serverUrl,
+          endpoint.token,
+          vaultMeta,
+          encryptedItems,
+          getDeviceIdentifier(),
+          endpoint.provider === preflightEndpoint?.provider ? expectedVersion : endpoint.remoteVersion
+        )
       );
+      const res = pushExecution.result;
 
       if (res.success) {
-        const updatedCfg = {
-          ...syncConfig,
+        const updatedCfg = persistEndpointResult(syncConfig, pushExecution.endpoint, {
           lastSyncTime: res.updatedAt || new Date().toISOString(),
-          remoteVersion: res.version
-        };
-        saveNasSyncConfig(updatedCfg);
-        setSyncConfig(updatedCfg);
+          remoteVersion: res.version,
+          dataHash: res.dataHash
+        });
         onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
         setCurrentRemoteVersion(res.version ?? null);
         void refreshBackups(updatedCfg);
-        addToast('success', `全库凭据 (${encryptedItems.length}项) 已成功安全推送至极空间 NAS！`);
+        const replication = await replicateVaultToSecondary(
+          updatedCfg,
+          pushExecution.endpoint.provider,
+          vaultMeta,
+          encryptedItems,
+          getDeviceIdentifier()
+        );
+        if (replication.conflictedProviders.length > 0) {
+          addToast('info', '另一同步端存在未确认的独立版本，已停止覆盖；当前主方案数据仍已安全保存。');
+        }
+        addToast('success', `全库凭据 (${encryptedItems.length}项) 已安全保存到${pushExecution.endpoint.provider === 'aws' ? ' AWS' : '极空间 NAS'}${pushExecution.failedOver ? '备用方案' : ''}！`);
       } else {
         addToast('error', res.message || '推送失败');
       }
@@ -392,7 +497,10 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
     }
     setIsSyncing(true);
     try {
-      const res = await pullVaultFromNas(syncConfig.serverUrl, syncConfig.token);
+      const pullExecution = await runWithSyncFailover(syncConfig, (endpoint) =>
+        pullVaultFromNas(endpoint.serverUrl, endpoint.token)
+      );
+      const res = pullExecution.result;
       if (res.success && res.vaultMeta && res.encryptedItems) {
         // 使用本地主密钥尝试解密云端条目
         const decryptedItems = await decryptAllVaultItems(masterKey, res.encryptedItems);
@@ -402,18 +510,16 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
         saveStoredEncryptedItems(res.encryptedItems);
         onVaultUpdatedFromRemote(res.vaultMeta, decryptedItems);
 
-        const updatedCfg = {
-          ...syncConfig,
+        const updatedCfg = persistEndpointResult(syncConfig, pullExecution.endpoint, {
           lastSyncTime: res.updatedAt || new Date().toISOString(),
-          remoteVersion: res.version
-        };
-        saveNasSyncConfig(updatedCfg);
-        setSyncConfig(updatedCfg);
+          remoteVersion: res.version,
+          dataHash: res.dataHash
+        });
         onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
         setCurrentRemoteVersion(res.version ?? null);
         void refreshBackups(updatedCfg);
 
-        addToast('success', `已成功从极空间拉取并还原 ${decryptedItems.length} 条加密凭据！`);
+        addToast('success', `已从${pullExecution.endpoint.provider === 'aws' ? ' AWS' : '极空间 NAS'}${pullExecution.failedOver ? '备用方案' : ''}安全拉取并还原 ${decryptedItems.length} 条加密凭据！`);
       } else {
         addToast('info', res.message || '极空间云端暂无可拉取的金库数据');
       }
@@ -437,14 +543,17 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
 
     setIsRollingBack(true);
     try {
-      const status = await getNasSyncStatus(syncConfig.serverUrl, syncConfig.token);
+      const statusExecution = await runWithSyncFailover(syncConfig, (endpoint) =>
+        getNasSyncStatus(endpoint.serverUrl, endpoint.token)
+      );
+      const status = statusExecution.result;
       if (!status.success || typeof status.version !== 'number') {
         addToast('error', status.message || '无法确认当前云端版本，已取消回滚');
         return;
       }
       const result = await rollbackNasBackup(
-        syncConfig.serverUrl,
-        syncConfig.token,
+        statusExecution.endpoint.serverUrl,
+        statusExecution.endpoint.token,
         backup.id,
         status.version,
         getDeviceIdentifier()
@@ -454,7 +563,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
         return;
       }
 
-      const pullRes = await pullVaultFromNas(syncConfig.serverUrl, syncConfig.token);
+      const pullRes = await pullVaultFromNas(statusExecution.endpoint.serverUrl, statusExecution.endpoint.token);
       if (!pullRes.success || !pullRes.vaultMeta || !pullRes.encryptedItems) {
         addToast('error', pullRes.message || '回滚成功，但拉取回滚后的数据失败，请稍后重试');
         return;
@@ -464,13 +573,11 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
       saveStoredEncryptedItems(pullRes.encryptedItems);
       onVaultUpdatedFromRemote(pullRes.vaultMeta, decryptedItems);
 
-      const updatedCfg = {
-        ...syncConfig,
+      const updatedCfg = persistEndpointResult(syncConfig, statusExecution.endpoint, {
         lastSyncTime: pullRes.updatedAt || new Date().toISOString(),
-        remoteVersion: pullRes.version
-      };
-      saveNasSyncConfig(updatedCfg);
-      setSyncConfig(updatedCfg);
+        remoteVersion: pullRes.version,
+        dataHash: pullRes.dataHash
+      });
       setCurrentRemoteVersion(pullRes.version ?? null);
       onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
       await refreshBackups(updatedCfg);
@@ -479,6 +586,54 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
       addToast('error', err instanceof Error ? err.message : '历史版本回滚异常');
     } finally {
       setIsRollingBack(false);
+    }
+  };
+
+  // 切换主方案前先读取并校验目标端密文；校验失败或目标端为空时不触碰本地数据。
+  const handleActivateProvider = async (provider: SyncProviderId) => {
+    if (!syncConfig) return;
+    const endpoint = getSyncEndpoint(syncConfig, provider);
+    if (!endpoint) {
+      selectProvider(provider);
+      addToast('info', `请先配置${provider === 'aws' ? ' AWS' : '极空间 NAS'}同步端`);
+      return;
+    }
+    if ((syncConfig.activeProvider || syncConfig.provider || 'nas') === provider) {
+      selectProvider(provider);
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      const remote = await pullVaultFromNas(endpoint.serverUrl, endpoint.token);
+      if (!remote.success) throw new Error(remote.message || '目标同步端不可用，未执行切换');
+
+      if (remote.vaultMeta?.testCipher && masterKey) {
+        const decryptedItems = await decryptAllVaultItems(masterKey, remote.encryptedItems || []);
+        saveStoredVaultMeta(remote.vaultMeta);
+        saveStoredEncryptedItems(remote.encryptedItems || []);
+        onVaultUpdatedFromRemote(remote.vaultMeta, decryptedItems);
+      } else if (remote.vaultMeta?.testCipher && !masterKey) {
+        // 锁定状态只切换配置，不解密、不覆盖本地缓存；解锁流程会再次校验远端。
+        addToast('info', '当前处于锁定状态，已切换主方案；解锁时会再次校验并读取目标端数据。');
+      } else if (items.length > 0) {
+        throw new Error('目标同步端为空，为防止切换后误清空本地数据，已取消切换；请先把当前库复制到该端。');
+      }
+
+      const updatedCfg = persistEndpointResult(syncConfig, endpoint, {
+        lastSyncTime: remote.updatedAt || new Date().toISOString(),
+        remoteVersion: remote.version,
+        dataHash: remote.dataHash
+      }, true);
+      selectProvider(provider);
+      setCurrentRemoteVersion(remote.version ?? null);
+      onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
+      await refreshBackups(updatedCfg);
+      addToast('success', `已安全切换到${provider === 'aws' ? ' AWS' : '极空间 NAS + Cloudflare Tunnel'}主同步方案。`);
+    } catch (err: unknown) {
+      addToast('error', err instanceof Error ? err.message : '切换同步方案失败，原方案未改变');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -540,13 +695,61 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
             </div>
           </div>
 
-          {syncConfig ? (
+          {/* 两套独立同步端：可任意选择主方案，网络故障时只在安全条件下自动切换 */}
+          <div className="p-3 bg-slate-800/40 border border-slate-700/70 rounded-lg space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-200">同步方案选择</span>
+              <span className="text-[10px] text-slate-500">故障自动切换 · 双端密文复制</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {(['nas', 'aws'] as SyncProviderId[]).map((provider) => {
+                const endpoint = syncConfig ? getSyncEndpoint(syncConfig, provider) : null;
+                const active = (syncConfig?.activeProvider || syncConfig?.provider || 'nas') === provider;
+                return (
+                  <button
+                    key={provider}
+                    type="button"
+                    onClick={() => selectProvider(provider)}
+                    className={`text-left px-3 py-2 rounded border transition-colors ${
+                      selectedProvider === provider
+                        ? 'border-emerald-500/70 bg-emerald-950/40'
+                        : 'border-slate-700 bg-slate-900/50 hover:border-slate-500'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-slate-100">
+                        {provider === 'nas' ? '极空间 + Cloudflare' : 'AWS 同步服务器'}
+                      </span>
+                      <span className={`text-[9px] ${active ? 'text-emerald-400' : endpoint ? 'text-sky-400' : 'text-slate-500'}`}>
+                        {active ? '主方案' : endpoint ? '已配置' : '未配置'}
+                      </span>
+                    </div>
+                    <span className="block mt-1 truncate text-[10px] text-slate-500 font-mono">
+                      {endpoint?.serverUrl || (provider === 'nas' ? '填写 NAS / Tunnel 地址' : '填写 AWS HTTPS 地址')}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {syncConfig && selectedEndpoint && (syncConfig.activeProvider || syncConfig.provider || 'nas') !== selectedProvider && (
+              <button
+                type="button"
+                onClick={() => void handleActivateProvider(selectedProvider)}
+                disabled={isSyncing}
+                className="w-full px-3 py-2 text-[11px] text-sky-300 border border-sky-800/70 bg-sky-950/20 hover:bg-sky-950/40 disabled:opacity-50 rounded"
+              >
+                校验目标密文并切换为主方案
+              </button>
+            )}
+          </div>
+
+          {syncConfig && selectedEndpoint ? (
             /* 已连接状态展示 */
             <div className="space-y-4">
               {/* 智能检测：如果当前访问的网页地址与已保存的同步网址不同，提示一键适配 */}
               {typeof window !== 'undefined' &&
                 window.location.protocol.startsWith('http') &&
-                normalizeServerUrl(window.location.origin) !== normalizeServerUrl(syncConfig.serverUrl) && (
+                normalizeServerUrl(window.location.origin) !== normalizeServerUrl(selectedEndpoint.serverUrl) && (
                   <div className="p-3 bg-sky-950/40 border border-sky-800/60 rounded-lg text-sky-200 text-xs flex items-center justify-between gap-3 shadow-sm">
                     <div className="flex items-center gap-2 min-w-0">
                       <ExternalLink className="w-4 h-4 text-sky-400 shrink-0" />
@@ -580,7 +783,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                 <div className="flex items-center justify-between pb-2 border-b border-slate-700/60">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="font-bold text-slate-100 text-sm">极空间数据已联机</span>
+                    <span className="font-bold text-slate-100 text-sm">{selectedProvider === 'aws' ? 'AWS 同步端已联机' : '极空间 NAS 已联机'}</span>
                   </div>
                   <span className="font-mono text-[11px] text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
                     CONNECTED
@@ -593,7 +796,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                     <div className="col-span-2 bg-slate-900/90 p-3 rounded-lg border border-emerald-500/50 space-y-2">
                       <div className="flex items-center justify-between">
                         <label className="text-[11px] font-bold text-slate-200">
-                          更换极空间 NAS 网址 (保持当前登录，无需重新配置)
+                          更换{selectedProvider === 'aws' ? ' AWS' : '极空间 NAS'}网址 (保持当前登录，无需重新配置)
                         </label>
                         {typeof window !== 'undefined' && window.location.protocol.startsWith('http') && (
                           <button
@@ -634,11 +837,11 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                   ) : (
                     <div className="col-span-2 bg-slate-900/60 p-2.5 rounded border border-slate-700/50">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-slate-400 font-mono text-[10px]">NAS 网址 // SERVER:</span>
+                        <span className="text-slate-400 font-mono text-[10px]">{selectedProvider === 'aws' ? 'AWS 网址' : 'NAS / Tunnel 网址'} // SERVER:</span>
                         <button
                           type="button"
                           onClick={() => {
-                            setEditUrlInput(syncConfig.serverUrl || window.location.origin);
+                            setEditUrlInput(selectedEndpoint.serverUrl || window.location.origin);
                             setIsEditingUrl(true);
                           }}
                           className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 hover:underline"
@@ -649,14 +852,14 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                         </button>
                       </div>
                       <span className="text-slate-200 truncate block text-xs">
-                        {syncConfig.serverUrl || `${window.location.origin}（跟随当前极空间访问地址）`}
+                        {selectedEndpoint.serverUrl || `${window.location.origin}（跟随当前网页访问地址）`}
                       </span>
                     </div>
                   )}
 
                   <div>
                     <span className="text-slate-500 block">同步账号 // USER:</span>
-                    <span className="text-slate-200 block">{syncConfig.username}</span>
+                    <span className="text-slate-200 block">{selectedEndpoint.username}</span>
                   </div>
                   <div>
                     <span className="text-slate-500 block">本地凭据体量:</span>
@@ -665,8 +868,8 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                   <div className="col-span-2 pt-1 border-t border-slate-700/40">
                     <span className="text-slate-500 block">最近成功同步:</span>
                     <span className="text-slate-200 block">
-                      {syncConfig.lastSyncTime
-                        ? new Date(syncConfig.lastSyncTime).toLocaleString('zh-CN', {
+                      {selectedEndpoint.lastSyncTime
+                        ? new Date(selectedEndpoint.lastSyncTime).toLocaleString('zh-CN', {
                             year: 'numeric',
                             month: '2-digit',
                             day: '2-digit',
@@ -683,7 +886,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
               {/* 操作按钮组 */}
               <div className="space-y-2.5">
                 <div className="text-[11px] leading-relaxed text-slate-400 px-1">
-                  登录时会自动获取该账号的全部数据，新增、修改和删除也会自动写回 NAS，无需手动同步。
+                  新增、修改和删除会自动写入当前主同步方案；若网络故障，软件只在版本与密文校验通过后切换到另一方案。
                 </div>
                 <button
                   onClick={handlePullFromNas}
@@ -695,7 +898,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                   ) : (
                     <RefreshCw className="w-4 h-4 text-emerald-100" />
                   )}
-                  <span>立即从 NAS 刷新数据</span>
+                  <span>立即刷新当前同步方案</span>
                 </button>
 
                 <div className="grid grid-cols-2 gap-2.5">
@@ -703,7 +906,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                     onClick={handlePushToNas}
                     disabled={isSyncing}
                     className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 border border-slate-700 rounded text-[11px] font-medium transition-colors"
-                    title="将本地数据推送至极空间（若本地数据少于云端会自动拦截预警）"
+                    title="将本地数据推送至当前主方案，并在安全条件下复制到另一方案"
                   >
                     <ArrowUpCircle className="w-3.5 h-3.5 text-emerald-400" />
                     <span>恢复性上传</span>
@@ -713,7 +916,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                     onClick={handlePullFromNas}
                     disabled={isSyncing}
                     className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 border border-slate-700 rounded text-[11px] font-medium transition-colors"
-                    title="从极空间拉取数据并覆盖本地"
+                    title="校验后从当前主方案拉取数据并覆盖本地"
                   >
                     <ArrowDownCircle className="w-3.5 h-3.5 text-sky-400" />
                     <span>重新下载</span>
@@ -784,7 +987,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
               <div className="flex items-center justify-between pt-2.5 border-t border-slate-800">
                 <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
                   <Smartphone className="w-3.5 h-3.5" />
-                  <span>手机端或其他设备输入相同账号登录即可互通</span>
+                  <span>手机端、桌面端和 NAS/AWS 使用相同账号即可互通</span>
                 </div>
                 <button
                   type="button"
@@ -832,16 +1035,16 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                   <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                   <div>
                     <span className="font-bold text-amber-300">温馨提示：</span>
-                    同步账号在极空间 NAS 上<strong>只需注册一次</strong>！如果您此前已在电脑端或其他设备注册过，请直接切换到<strong>「登录已有同步账号」</strong>登录，切勿重复注册。
+                    同步账号在当前同步服务器上<strong>只需注册一次</strong>！如果您此前已在其他设备注册过，请直接切换到<strong>「登录已有同步账号」</strong>登录，切勿重复注册。
                   </div>
                 </div>
               )}
 
-              {/* 极空间 NAS 访问网址 */}
+              {/* 当前同步方案访问网址 */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-bold text-slate-200">
-                    极空间 NAS 网址 (局域网 IP 或 极空间远程域名)
+                    {providerLabel}网址 (HTTPS 公网地址或局域网地址)
                   </label>
                   <button
                     type="button"
@@ -858,7 +1061,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                   required
                   value={serverUrl}
                   onChange={(e) => setServerUrl(e.target.value)}
-                  placeholder="例如: http://192.168.5.134:18088 或极空间远程网址"
+                  placeholder={selectedProvider === 'aws' ? '例如: https://aws-safevault.example.com' : '例如: http://192.168.5.134:18088 或 Cloudflare Tunnel 地址'}
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 font-mono text-xs focus:border-emerald-500 focus:outline-none"
                 />
                 {healthStatus && (

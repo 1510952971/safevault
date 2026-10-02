@@ -10,7 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "test": "node tests/test-crypto.js && node tests/test-audit-totp.js && node tests/test-secondary-auth.js && node tests/test-advanced-features.js && node tests/test-sync-protocol.js && node tests/test-platform-versions.js",
+    "test": "node tests/test-crypto.js && node tests/test-security-boundary.js && node tests/test-audit-totp.js && node tests/test-secondary-auth.js && node tests/test-advanced-features.js && node tests/test-sync-protocol.js && node tests/test-platform-versions.js",
     "desktop": "npm run build && electron electron/main.cjs",
     "desktop:refresh": "npm run build && electron electron/main.cjs --safevault-refresh",
     "version:sync": "node scripts/sync-mobile-version.mjs",

@@ -102,7 +102,7 @@ export const ChangeMasterPasswordModal: React.FC<ChangeMasterPasswordModalProps>
             <span>零知识无损重加密标准</span>
           </div>
           <p className="text-[11px] text-slate-500 leading-relaxed font-mono">
-            修改主密码后，系统将自动生成新盐值，并通过 PBKDF2 100,000 轮派生新 AES 密钥，对库内全部 <strong>{totalItemsCount}</strong> 条凭据逐一重新加密。
+            修改主密码后，系统将生成新盐值和随机金库数据密钥，通过 PBKDF2 600,000 轮派生新 KEK 包裹它，并对库内全部 <strong>{totalItemsCount}</strong> 条凭据逐一重新加密。
           </p>
         </div>
 
