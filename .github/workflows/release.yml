@@ -130,7 +130,7 @@ jobs:
       - run: npm run build
       - name: Package Windows desktop app
         run: |
-          npx --yes electron-packager . SafeVault \
+          npx --yes @electron/packager . SafeVault \
             --platform=win32 \
             --arch=x64 \
             --out=release/desktop \
