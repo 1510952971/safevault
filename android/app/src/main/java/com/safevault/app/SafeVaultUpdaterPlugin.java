@@ -37,6 +37,7 @@ public class SafeVaultUpdaterPlugin extends Plugin {
 
         String safeName = requestedName.replaceAll("[^A-Za-z0-9._-]", "_");
         if (!safeName.toLowerCase().endsWith(".apk")) safeName += ".apk";
+        final String apkFileName = safeName;
 
         executor.execute(() -> {
             HttpURLConnection connection = null;
@@ -53,7 +54,7 @@ public class SafeVaultUpdaterPlugin extends Plugin {
                     throw new IllegalStateException("下载失败 HTTP " + status);
                 }
 
-                final File apk = new File(getContext().getCacheDir(), safeName);
+                final File apk = new File(getContext().getCacheDir(), apkFileName);
                 try (InputStream input = connection.getInputStream();
                      FileOutputStream output = new FileOutputStream(apk)) {
                     byte[] buffer = new byte[8192];
