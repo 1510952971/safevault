@@ -203,6 +203,8 @@ export const USER_MANUAL_SECTIONS: ManualSection[] = [
       {
         heading: '正常同步流程',
         steps: [
+          '极空间远程默认地址为 https://safevault.eyeme.online；与极空间处于同一局域网时，也可使用内网第二地址 http://192.168.5.134:18088。',
+          'AWS 同步服务器默认地址为 https://aws-safevault.eyeme.online；可将 NAS 或 AWS 任一端设为主方案，另一端作为备用。',
           '各客户端配置同一组 NAS/AWS 地址，并使用同一同步账号登录。',
           '登录时客户端从当前主同步端下载最新密文，验证主密码后打开密码库。',
           '任一客户端新增、编辑、置顶、删除或修改安全设置后自动写入主方案，并尝试复制到备用方案。',

@@ -161,7 +161,9 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: SafeVault ${{ env.RELEASE_TAG }}
-          target_commitish: ${{ env.SOURCE_REF }}
+          # GitHub rejects refs/tags/... as target_commitish when the workflow
+          # is triggered by a tag. Use the exact checked-out commit instead.
+          target_commitish: ${{ github.event_name == 'push' && github.sha || inputs.source_ref }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: release-assets/*

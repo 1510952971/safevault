@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Clock,
   KeyRound,
@@ -65,16 +66,52 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const morePortalRef = useRef<HTMLDivElement>(null);
+  const [moreMenuStyle, setMoreMenuStyle] = useState<React.CSSProperties>({});
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        moreMenuRef.current &&
+        !moreMenuRef.current.contains(target) &&
+        !morePortalRef.current?.contains(target)
+      ) {
         setIsMoreOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!isMoreOpen) return;
+
+    const updateMoreMenuPosition = () => {
+      const button = moreButtonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const menuWidth = 208;
+      const left = Math.min(
+        Math.max(8, rect.right - menuWidth),
+        Math.max(8, window.innerWidth - menuWidth - 8)
+      );
+      setMoreMenuStyle({
+        top: `${Math.min(rect.bottom + 6, window.innerHeight - 12)}px`,
+        left: `${left}px`,
+        width: `${menuWidth}px`
+      });
+    };
+
+    updateMoreMenuPosition();
+    window.addEventListener('resize', updateMoreMenuPosition);
+    window.addEventListener('scroll', updateMoreMenuPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateMoreMenuPosition);
+      window.removeEventListener('scroll', updateMoreMenuPosition, true);
+    };
+  }, [isMoreOpen]);
 
   const formatTimer = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -207,6 +244,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* 更多功能下拉菜单 (优雅收纳 修改主密码、应急救援单、GitHub更新) */}
             <div className="relative" ref={moreMenuRef}>
               <button
+                ref={moreButtonRef}
                 onClick={() => setIsMoreOpen(!isMoreOpen)}
                 className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1 whitespace-nowrap shrink-0 ${
                   isMoreOpen
@@ -219,8 +257,12 @@ export const Header: React.FC<HeaderProps> = ({
                 <ChevronDown className={`w-3 h-3 transition-transform ${isMoreOpen ? 'rotate-180' : ''}`} />
               </button>
 
-              {isMoreOpen && (
-                <div className="absolute right-0 mt-1.5 w-52 bg-white border border-slate-200 rounded-lg shadow-xl py-1 z-50 animate-in fade-in-50 duration-150">
+              {isMoreOpen && createPortal(
+                <div
+                  ref={morePortalRef}
+                  style={{ ...moreMenuStyle, position: 'fixed' }}
+                  className="bg-white border border-slate-200 rounded-lg shadow-xl py-1 z-[100] animate-in fade-in-50 duration-150 max-h-[calc(100vh-5rem)] overflow-y-auto"
+                >
                   {onOpenChangeMasterPassword && (
                     <button
                       onClick={() => {
@@ -281,7 +323,8 @@ export const Header: React.FC<HeaderProps> = ({
                       </div>
                     </button>
                   )}
-                </div>
+                </div>,
+                document.body
               )}
             </div>
 

@@ -43,7 +43,14 @@ export interface NasSyncConfig {
   endpoints?: Partial<Record<SyncProviderId, SyncEndpointConfig>>;
 }
 
-export const DEFAULT_NAS_SERVER_URL = 'http://192.168.5.134:18088';
+/** 稳定的极空间远程入口；客户端首次打开同步设置时优先使用该地址。 */
+export const DEFAULT_NAS_REMOTE_SERVER_URL = 'https://safevault.eyeme.online';
+/** 极空间同一局域网内的直连入口，仅在设备回到家庭网络时使用。 */
+export const DEFAULT_NAS_LOCAL_SERVER_URL = 'http://192.168.5.134:18088';
+/** AWS 双端同步服务的稳定 HTTPS 入口。 */
+export const DEFAULT_AWS_SERVER_URL = 'https://aws-safevault.eyeme.online';
+/** 保留旧导出名，语义改为默认远程入口，避免旧代码兼容性断裂。 */
+export const DEFAULT_NAS_SERVER_URL = DEFAULT_NAS_REMOTE_SERVER_URL;
 export const CURRENT_AUTH_KDF_ITERATIONS = 600000;
 const LEGACY_AUTH_KDF_ITERATIONS = 10000;
 const MAX_AUTH_KDF_ITERATIONS = 2_000_000;
@@ -52,13 +59,11 @@ const MAX_AUTH_KDF_ITERATIONS = 2_000_000;
  * 桌面端默认连接固定的家庭 NAS；从 NAS 网页或远程代理访问时跟随当前站点。
  */
 export function getDefaultNasServerUrl(): string {
-  if (typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
-    const hostname = window.location.hostname.toLowerCase();
-    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-      return window.location.origin;
-    }
-  }
-  return DEFAULT_NAS_SERVER_URL;
+  return DEFAULT_NAS_REMOTE_SERVER_URL;
+}
+
+export function getDefaultAwsServerUrl(): string {
+  return DEFAULT_AWS_SERVER_URL;
 }
 
 export interface NasBackupSummary {

@@ -35,6 +35,10 @@ import {
   getDeviceIdentifier,
   normalizeServerUrl,
   getDefaultNasServerUrl,
+  getDefaultAwsServerUrl,
+  DEFAULT_NAS_REMOTE_SERVER_URL,
+  DEFAULT_NAS_LOCAL_SERVER_URL,
+  DEFAULT_AWS_SERVER_URL,
   SyncProviderId,
   SyncEndpointConfig,
   getSyncEndpoint,
@@ -99,7 +103,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
   const selectProvider = (provider: SyncProviderId) => {
     setSelectedProvider(provider);
     const endpoint = syncConfig ? getSyncEndpoint(syncConfig, provider) : null;
-    setServerUrl(endpoint?.serverUrl || (provider === 'nas' ? getDefaultNasServerUrl() : ''));
+    setServerUrl(endpoint?.serverUrl || (provider === 'nas' ? getDefaultNasServerUrl() : getDefaultAwsServerUrl()));
     setUsername(endpoint?.username || syncConfig?.username || '');
     setHealthStatus(null);
   };
@@ -166,18 +170,13 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
         const provider = cfg.activeProvider || cfg.provider || 'nas';
         setSelectedProvider(provider);
         const endpoint = getSyncEndpoint(cfg, provider);
-        setServerUrl(endpoint?.serverUrl || window.location.origin);
+        setServerUrl(endpoint?.serverUrl || (provider === 'nas' ? getDefaultNasServerUrl() : getDefaultAwsServerUrl()));
         setUsername(endpoint?.username || cfg.username);
         setIsAutoSync(endpoint?.autoSync ?? cfg.autoSync);
         setCurrentRemoteVersion(endpoint?.remoteVersion ?? cfg.remoteVersion ?? null);
         if (endpoint) void refreshBackups(cfg);
       } else {
-        // 若当前处于 NAS 容器托管的网页下，自动预填当前 origin
-        if (window.location.port === '8088' || window.location.pathname.startsWith('/')) {
-          setServerUrl(getDefaultNasServerUrl());
-        } else {
-          setServerUrl(getDefaultNasServerUrl());
-        }
+        setServerUrl(getDefaultNasServerUrl());
       }
     }
   }, [isOpen]);
@@ -725,13 +724,13 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                       </span>
                     </div>
                     <span className="block mt-1 truncate text-[10px] text-slate-500 font-mono">
-                      {endpoint?.serverUrl || (provider === 'nas' ? '填写 NAS / Tunnel 地址' : '填写 AWS HTTPS 地址')}
+                      {endpoint?.serverUrl || (provider === 'nas' ? DEFAULT_NAS_REMOTE_SERVER_URL : DEFAULT_AWS_SERVER_URL)}
                     </span>
                   </button>
                 );
               })}
             </div>
-            {syncConfig && selectedEndpoint && (syncConfig.activeProvider || syncConfig.provider || 'nas') !== selectedProvider && (
+              {syncConfig && selectedEndpoint && (syncConfig.activeProvider || syncConfig.provider || 'nas') !== selectedProvider && (
               <button
                 type="button"
                 onClick={() => void handleActivateProvider(selectedProvider)}
@@ -741,6 +740,40 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                 校验目标密文并切换为主方案
               </button>
             )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] font-mono">
+              {selectedProvider === 'nas' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setServerUrl(DEFAULT_NAS_REMOTE_SERVER_URL)}
+                    className="text-left px-2.5 py-2 rounded border border-sky-800/70 bg-sky-950/20 hover:bg-sky-950/40 transition-colors"
+                    title="远程设备和外网使用的固定地址"
+                  >
+                    <span className="block text-sky-300 font-bold">NAS 远程默认地址</span>
+                    <span className="block mt-1 text-slate-400 truncate">{DEFAULT_NAS_REMOTE_SERVER_URL}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setServerUrl(DEFAULT_NAS_LOCAL_SERVER_URL)}
+                    className="text-left px-2.5 py-2 rounded border border-amber-800/70 bg-amber-950/20 hover:bg-amber-950/40 transition-colors"
+                    title="与极空间处于同一 Wi-Fi 时的直连地址"
+                  >
+                    <span className="block text-amber-300 font-bold">NAS 内网第二地址</span>
+                    <span className="block mt-1 text-slate-400 truncate">{DEFAULT_NAS_LOCAL_SERVER_URL}</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setServerUrl(DEFAULT_AWS_SERVER_URL)}
+                  className="text-left px-2.5 py-2 rounded border border-violet-800/70 bg-violet-950/20 hover:bg-violet-950/40 transition-colors sm:col-span-2"
+                  title="AWS 双端同步服务默认 HTTPS 地址"
+                >
+                  <span className="block text-violet-300 font-bold">AWS 默认同步地址</span>
+                  <span className="block mt-1 text-slate-400 truncate">{DEFAULT_AWS_SERVER_URL}</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {syncConfig && selectedEndpoint ? (
