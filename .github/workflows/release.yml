@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "要创建或更新的版本标签，例如 v1.3.0"
+        description: "要创建或更新的版本标签，例如 v1.3.1"
         required: true
-        default: v1.3.0
+        default: v1.3.1
         type: string
       source_ref:
         description: "用于构建的分支或提交，例如 main"
