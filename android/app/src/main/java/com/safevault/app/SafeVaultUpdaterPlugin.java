@@ -53,7 +53,7 @@ public class SafeVaultUpdaterPlugin extends Plugin {
                     throw new IllegalStateException("下载失败 HTTP " + status);
                 }
 
-                File apk = new File(getContext().getCacheDir(), safeName);
+                final File apk = new File(getContext().getCacheDir(), safeName);
                 try (InputStream input = connection.getInputStream();
                      FileOutputStream output = new FileOutputStream(apk)) {
                     byte[] buffer = new byte[8192];
