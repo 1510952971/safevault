@@ -1,0 +1,167 @@
+name: SafeVault Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "要创建或更新的版本标签，例如 v1.3.0"
+        required: true
+        default: v1.3.0
+        type: string
+      source_ref:
+        description: "用于构建的分支或提交，例如 main"
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+  SOURCE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install Android SDK 36
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+      - run: npm ci
+      - run: npm run android:sync
+      - working-directory: android
+        run: |
+          sed -i 's/\r$//' gradlew
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+      - name: Rename Android APK
+        run: mv android/app/build/outputs/apk/debug/app-debug.apk "SafeVault-Android-${RELEASE_TAG}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: SafeVault-Android-${{ env.RELEASE_TAG }}.apk
+          if-no-files-found: error
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run ios:sync
+      - name: Build iOS simulator app
+        working-directory: ios/App
+        run: >-
+          xcodebuild
+          -project App.xcodeproj
+          -scheme App
+          -configuration Debug
+          -sdk iphonesimulator
+          -derivedDataPath build
+          CODE_SIGNING_ALLOWED=NO
+          build
+      - name: Package iOS simulator app
+        run: ditto -c -k --sequesterRsrc --keepParent ios/App/build/Build/Products/Debug-iphonesimulator/App.app "SafeVault-iOS-Simulator-${RELEASE_TAG}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-ios-simulator
+          path: SafeVault-iOS-Simulator-${{ env.RELEASE_TAG }}.zip
+          if-no-files-found: error
+
+  nas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Assemble NAS package
+        run: |
+          package_dir="release/SafeVault-NAS-${RELEASE_TAG}"
+          mkdir -p "$package_dir/dist" "$package_dir/server" "$package_dir/data" "$package_dir/safevault-backup"
+          cp -R dist/. "$package_dir/dist/"
+          cp -R server/. "$package_dir/server/"
+          cp package.json deploy/docker-compose.yml "$package_dir/"
+          (cd release && zip -qr "SafeVault-NAS-${RELEASE_TAG}.zip" "SafeVault-NAS-${RELEASE_TAG}")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-nas
+          path: release/SafeVault-NAS-${{ env.RELEASE_TAG }}.zip
+          if-no-files-found: error
+
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Package Windows desktop app
+        run: |
+          npx --yes electron-packager . SafeVault \
+            --platform=win32 \
+            --arch=x64 \
+            --out=release/desktop \
+            --overwrite \
+            --prune=true \
+            --ignore='^/(android|ios|tests|docs|deploy|data|safevault-backup|release|\.git)/'
+          (cd release/desktop && zip -qr "../SafeVault-Windows-x64-${RELEASE_TAG}.zip" SafeVault-win32-x64)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-desktop
+          path: release/SafeVault-Windows-x64-${{ env.RELEASE_TAG }}.zip
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && startsWith(inputs.release_tag, 'v'))
+    needs: [android, ios, nas, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Show release assets
+        run: find release-assets -maxdepth 2 -type f -print
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: SafeVault ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ env.SOURCE_REF }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: release-assets/*
