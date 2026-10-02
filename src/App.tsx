@@ -51,6 +51,8 @@ import {
 import { PrivacyShield } from './components/PrivacyShield';
 import { Toast } from './components/Toast';
 import { checkForGitHubUpdate } from './utils/updateChecker';
+import { ThemePickerModal } from './components/ThemePickerModal';
+import { applyTheme, loadTheme, ThemeId } from './utils/theme';
 
 export const App: React.FC = () => {
   // 金库核心状态
@@ -80,6 +82,8 @@ export const App: React.FC = () => {
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [isUserManualOpen, setIsUserManualOpen] = useState(false);
+  const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
+  const [theme, setTheme] = useState<ThemeId>(() => loadTheme());
 
   // 极空间 NAS 配置与账号登录状态
   const [nasConfig, setNasConfig] = useState<NasSyncConfig | null>(() => loadNasSyncConfig());
@@ -98,6 +102,10 @@ export const App: React.FC = () => {
 
   // 提示信息
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
+
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   const addToast = (type: ToastNotification['type'], message: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
@@ -172,6 +180,7 @@ export const App: React.FC = () => {
     setIsEmergencyKitModalOpen(false);
     setIsSyncModalOpen(false);
     setIsUpdateModalOpen(false);
+    setIsThemeModalOpen(false);
     pendingSecondaryActionRef.current = null;
     addToast('info', '密码数据库已安全锁定');
   }, []);
@@ -1121,7 +1130,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="h-screen overflow-hidden flex flex-col bg-[#F5F6F8] text-slate-900 selection:bg-brand-lime selection:text-black">
+    <div data-theme={theme} className="safevault-app-shell h-screen overflow-hidden flex flex-col bg-[#F5F6F8] text-slate-900 selection:bg-brand-lime selection:text-black">
       {/* 顶部导航 */}
       <Header
         isLocked={isLocked}
@@ -1146,6 +1155,7 @@ export const App: React.FC = () => {
         nasLastSyncTime={nasConfig?.lastSyncTime}
         onOpenSyncModal={() => setIsSyncModalOpen(true)}
         onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
+        onOpenTheme={() => setIsThemeModalOpen(true)}
       />
 
       {/* 主体工作台 */}
@@ -1343,6 +1353,17 @@ export const App: React.FC = () => {
       <UserManualModal
         isOpen={isUserManualOpen}
         onClose={() => setIsUserManualOpen(false)}
+      />
+
+      <ThemePickerModal
+        isOpen={isThemeModalOpen}
+        currentTheme={theme}
+        onSelect={(nextTheme) => {
+          setTheme(nextTheme);
+          setIsThemeModalOpen(false);
+          addToast('success', '主题已切换，密码库数据未改变');
+        }}
+        onClose={() => setIsThemeModalOpen(false)}
       />
 
       {/* 浏览器失焦/切后台高斯模糊防肩窥隐私幕布 */}

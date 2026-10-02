@@ -88,6 +88,125 @@ textarea {
   font-weight: 600;
 }
 
+.mobile-fab {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* 主题系统：所有主题只改变视觉令牌，不触碰密文、账号和同步配置。 */
+.safevault-app-shell {
+  --sv-page: #f1f3f7;
+  --sv-surface: rgba(255, 255, 255, 0.96);
+  --sv-surface-muted: #f8fafc;
+  --sv-chip: #f1f5f9;
+  --sv-text: #161922;
+  --sv-muted: #64748b;
+  --sv-line: #dce1eb;
+  --sv-accent: #c8f135;
+  background-color: var(--sv-page) !important;
+  color: var(--sv-text);
+}
+
+.safevault-app-shell .safevault-main-canvas {
+  background-color: var(--sv-page) !important;
+}
+
+.safevault-app-shell .safevault-header,
+.safevault-app-shell .safevault-mobile-nav,
+.safevault-app-shell .safevault-sidebar,
+.safevault-app-shell .bg-white {
+  background-color: var(--sv-surface) !important;
+}
+
+.safevault-app-shell .bg-slate-50,
+.safevault-app-shell .bg-slate-100 {
+  background-color: var(--sv-surface-muted) !important;
+}
+
+.safevault-app-shell .text-slate-950,
+.safevault-app-shell .text-slate-900,
+.safevault-app-shell .text-slate-800 {
+  color: var(--sv-text) !important;
+}
+
+.safevault-app-shell .text-slate-700,
+.safevault-app-shell .text-slate-600,
+.safevault-app-shell .text-slate-500 {
+  color: var(--sv-muted) !important;
+}
+
+.safevault-app-shell .border-slate-100,
+.safevault-app-shell .border-slate-200,
+.safevault-app-shell .border-slate-300 {
+  border-color: var(--sv-line) !important;
+}
+
+.safevault-app-shell .bg-brand-lime {
+  background-color: var(--sv-accent) !important;
+}
+
+.safevault-app-shell .text-brand-lime {
+  color: var(--sv-accent) !important;
+}
+
+.safevault-app-shell .border-brand-lime {
+  border-color: var(--sv-accent) !important;
+}
+
+html[data-theme='midnight'] .safevault-app-shell {
+  --sv-page: #0b1220;
+  --sv-surface: #111827;
+  --sv-surface-muted: #172235;
+  --sv-chip: #1e293b;
+  --sv-text: #e5eefc;
+  --sv-muted: #94a3b8;
+  --sv-line: #2b3b55;
+  --sv-accent: #a3e635;
+}
+
+html[data-theme='ocean'] .safevault-app-shell {
+  --sv-page: #eaf4f7;
+  --sv-surface: #f7feff;
+  --sv-surface-muted: #e4f1f5;
+  --sv-chip: #d8edf3;
+  --sv-text: #0b2740;
+  --sv-muted: #527084;
+  --sv-line: #c5e1e8;
+  --sv-accent: #38bdf8;
+}
+
+html[data-theme='aurora'] .safevault-app-shell {
+  --sv-page: #eefdf8;
+  --sv-surface: #f8fffc;
+  --sv-surface-muted: #e7f8f1;
+  --sv-chip: #d9f5eb;
+  --sv-text: #0f2b27;
+  --sv-muted: #5b7b73;
+  --sv-line: #c6eee3;
+  --sv-accent: #2dd4bf;
+}
+
+html[data-theme='rose'] .safevault-app-shell {
+  --sv-page: #fff4f4;
+  --sv-surface: #fffafa;
+  --sv-surface-muted: #fff1f2;
+  --sv-chip: #ffe4e6;
+  --sv-text: #3b1420;
+  --sv-muted: #8b626d;
+  --sv-line: #f3c6cf;
+  --sv-accent: #fb7185;
+}
+
+html[data-theme='paper'] .safevault-app-shell {
+  --sv-page: #f5f1e8;
+  --sv-surface: #fffdf7;
+  --sv-surface-muted: #f7f0e4;
+  --sv-chip: #eee4d3;
+  --sv-text: #322a22;
+  --sv-muted: #786b5b;
+  --sv-line: #ded4c6;
+  --sv-accent: #d97706;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
