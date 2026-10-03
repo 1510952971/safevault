@@ -378,7 +378,7 @@ export const VaultList: React.FC<VaultListProps> = ({
             )}
           </div>
         ) : (
-          <div className="mobile-sticky-overview">
+          <div className="mobile-overview">
             <VaultOverview
               totalItems={activeItems.length}
               favoriteCount={audit.favoriteCount}

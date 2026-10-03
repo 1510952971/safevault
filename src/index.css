@@ -91,18 +91,6 @@ textarea {
   padding-bottom: max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
 }
 
-@media (max-width: 640px) {
-  /* 只固定主界面最上方的总览卡片，下面的密码列表仍保持独立滚动。 */
-  .safevault-main-canvas .mobile-sticky-overview {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    padding-top: 0.75rem;
-    padding-bottom: 0.5rem;
-    background: var(--sv-page);
-  }
-}
-
 .mobile-bottom-nav {
   padding-bottom: max(0.4rem, env(safe-area-inset-bottom, 0px));
 }
