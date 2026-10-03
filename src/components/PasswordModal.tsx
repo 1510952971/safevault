@@ -176,7 +176,7 @@ export const PasswordModal: React.FC<PasswordModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+    <div className="android-modal-safe fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
       <div className="relative bg-white border border-slate-300 rounded-lg w-full max-w-lg shadow-2xl overflow-hidden my-8 p-6">
         {/* 四角刻度标 */}
         <div className="absolute top-2 left-2 text-slate-300 font-mono text-xs">┌</div>

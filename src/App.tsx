@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { VaultMeta, EncryptedVaultItem, DecryptedVaultItem, ToastNotification, VaultBackupFile } from './types/vault';
 import {
@@ -54,6 +55,7 @@ import { Toast } from './components/Toast';
 import { checkForGitHubUpdate } from './utils/updateChecker';
 import { ThemePickerModal } from './components/ThemePickerModal';
 import { applyTheme, loadTheme, ThemeId } from './utils/theme';
+import { handleAndroidBack } from './utils/androidBack';
 
 export const App: React.FC = () => {
   const isAndroidNative = Capacitor.getPlatform() === 'android';
@@ -186,6 +188,73 @@ export const App: React.FC = () => {
     pendingSecondaryActionRef.current = null;
     addToast('info', '密码数据库已安全锁定');
   }, []);
+
+  // Android 系统返回/边缘左滑：优先关闭当前弹窗，避免 WebView 直接退出应用。
+  useEffect(() => {
+    if (!isAndroidNative) return;
+
+    let disposed = false;
+    let subscription: { remove: () => Promise<void> } | undefined;
+
+    const registerBackButton = async () => {
+      const listener = await CapacitorApp.addListener('backButton', () => {
+        if (handleAndroidBack()) {
+          return;
+        }
+        if (isPasswordModalOpen) {
+          setIsPasswordModalOpen(false);
+          setEditingItem(null);
+        } else if (isSecondaryModalOpen) {
+          setIsSecondaryModalOpen(false);
+        } else if (isCommandPaletteOpen) {
+          setIsCommandPaletteOpen(false);
+        } else if (isGeneratorModalOpen) {
+          setIsGeneratorModalOpen(false);
+        } else if (isBackupModalOpen) {
+          setIsBackupModalOpen(false);
+        } else if (isChangeMasterModalOpen) {
+          setIsChangeMasterModalOpen(false);
+        } else if (isEmergencyKitModalOpen) {
+          setIsEmergencyKitModalOpen(false);
+        } else if (isSyncModalOpen) {
+          setIsSyncModalOpen(false);
+        } else if (isUpdateModalOpen) {
+          setIsUpdateModalOpen(false);
+        } else if (isUserManualOpen) {
+          setIsUserManualOpen(false);
+        } else if (isThemeModalOpen) {
+          setIsThemeModalOpen(false);
+        } else {
+          void CapacitorApp.exitApp();
+        }
+      });
+
+      if (disposed) {
+        await listener.remove();
+      } else {
+        subscription = listener;
+      }
+    };
+
+    void registerBackButton();
+    return () => {
+      disposed = true;
+      void subscription?.remove();
+    };
+  }, [
+    isAndroidNative,
+    isPasswordModalOpen,
+    isSecondaryModalOpen,
+    isCommandPaletteOpen,
+    isGeneratorModalOpen,
+    isBackupModalOpen,
+    isChangeMasterModalOpen,
+    isEmergencyKitModalOpen,
+    isSyncModalOpen,
+    isUpdateModalOpen,
+    isUserManualOpen,
+    isThemeModalOpen
+  ]);
 
   // 全局快捷键监听 (Ctrl+K / Cmd+K 唤起战术命令中枢)
   useEffect(() => {

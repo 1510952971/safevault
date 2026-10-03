@@ -8,6 +8,7 @@ import { EmptySlotCard } from './EmptySlotCard';
 import { TacticalDefensePanel } from './TacticalDefensePanel';
 import { performSecurityAudit } from '../utils/audit';
 import { calculatePasswordStrength } from '../utils/crypto';
+import { registerAndroidBackHandler } from '../utils/androidBack';
 
 interface VaultListProps {
   items: DecryptedVaultItem[];
@@ -132,6 +133,18 @@ export const VaultList: React.FC<VaultListProps> = ({
       // 私有浏览模式或存储被禁用时不影响界面使用。
     }
   }, [isDefenseCollapsed]);
+
+  React.useEffect(() => registerAndroidBackHandler(() => {
+    if (isDefenseOpen) {
+      setIsDefenseOpen(false);
+      return true;
+    }
+    if (isSidebarOpen) {
+      setIsSidebarOpen(false);
+      return true;
+    }
+    return false;
+  }), [isDefenseOpen, isSidebarOpen]);
 
   const isTrashMode = selectedCategory === 'trash';
   const activeItems = useMemo(() => items.filter((i) => !i.isDeleted), [items]);
@@ -365,15 +378,17 @@ export const VaultList: React.FC<VaultListProps> = ({
             )}
           </div>
         ) : (
-          <VaultOverview
-            totalItems={activeItems.length}
-            favoriteCount={audit.favoriteCount}
-            weakCount={audit.weakCount}
-            reusedCount={audit.reusedCount}
-            healthScore={audit.healthScore}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-          />
+          <div className="mobile-sticky-overview">
+            <VaultOverview
+              totalItems={activeItems.length}
+              favoriteCount={audit.favoriteCount}
+              weakCount={audit.weakCount}
+              reusedCount={audit.reusedCount}
+              healthScore={audit.healthScore}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+            />
+          </div>
         )}
 
         {/* 核心置顶凭据展示区 (专业密码管理器设计) */}
@@ -643,7 +658,7 @@ export const VaultList: React.FC<VaultListProps> = ({
 
       {/* 窄窗口下按需打开安全审计侧栏 */}
       {isDefenseOpen && !isDefensePinned && (
-        <div className="fixed inset-0 z-50 2xl:hidden flex justify-end">
+        <div className="fixed inset-0 z-50 2xl:hidden flex">
           <button
             type="button"
             aria-label="关闭安全审计侧栏"

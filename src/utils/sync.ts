@@ -284,8 +284,9 @@ export async function checkNasHealth(serverUrl: string): Promise<{
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-    const res = await fetch(`${cleanUrl}/api/version`, {
+    const res = await fetch(`${cleanUrl}/api/version?ts=${Date.now()}`, {
       method: 'GET',
+      cache: 'no-store',
       signal: controller.signal
     });
     clearTimeout(timeoutId);

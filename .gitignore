@@ -7,6 +7,11 @@ deploy/zspace-v*/
 safevault-zspace-v*.zip
 *.tar
 
+# Android release signing material must stay outside Git.
+android/keystore.properties
+android/*.jks
+android/*.keystore
+
 # Runtime/test database files may contain authentication material or session tokens
 data/vault-store.json
 data/**/*.tmp.*

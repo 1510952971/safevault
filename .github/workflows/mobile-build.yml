@@ -29,12 +29,36 @@ jobs:
             "build-tools;36.0.0"
       - run: npm ci
       - run: npm run android:sync
+      - name: Configure stable Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.SAFEVAULT_ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SAFEVAULT_ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.SAFEVAULT_ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.SAFEVAULT_ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/safevault-release.keystore
+            cat > android/keystore.properties <<EOF
+          storeFile=safevault-release.keystore
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+            echo "Stable Android release signing configured."
+          else
+            echo "::warning::SAFEVAULT_ANDROID_* signing secrets are not configured; this build will use a temporary debug signature."
+          fi
       - working-directory: android
         run: |
           sed -i 's/\r$//' gradlew
           chmod +x gradlew
           set -o pipefail
-          ./gradlew --no-daemon assembleDebug 2>&1 | tee ../gradle-build.log
+          if [ -f keystore.properties ]; then
+            ./gradlew --no-daemon assembleRelease 2>&1 | tee ../gradle-build.log
+          else
+            ./gradlew --no-daemon assembleDebug 2>&1 | tee ../gradle-build.log
+          fi
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -50,7 +74,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: SafeVault-Android-${{ github.ref_name }}
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/apk/debug/app-debug.apk
 
   ios:
     runs-on: macos-latest

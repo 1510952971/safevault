@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "要创建或更新的版本标签，例如 v1.3.2"
+        description: "要创建或更新的版本标签，例如 v1.3.3"
         required: true
-        default: v1.3.2
+        default: v1.3.3
         type: string
       source_ref:
         description: "用于构建的分支或提交，例如 main"
@@ -46,13 +46,42 @@ jobs:
             "build-tools;36.0.0"
       - run: npm ci
       - run: npm run android:sync
+      - name: Configure stable Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.SAFEVAULT_ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SAFEVAULT_ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.SAFEVAULT_ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.SAFEVAULT_ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/safevault-release.keystore
+            cat > android/keystore.properties <<EOF
+          storeFile=safevault-release.keystore
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+            echo "Stable Android release signing configured."
+          else
+            echo "::warning::SAFEVAULT_ANDROID_* signing secrets are not configured; this release will use a temporary debug signature and cannot update an APK signed with another key."
+          fi
       - working-directory: android
         run: |
           sed -i 's/\r$//' gradlew
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+          if [ -f keystore.properties ]; then
+            ./gradlew --no-daemon assembleRelease
+          else
+            ./gradlew --no-daemon assembleDebug
+          fi
       - name: Rename Android APK
-        run: mv android/app/build/outputs/apk/debug/app-debug.apk "SafeVault-Android-${RELEASE_TAG}.apk"
+        run: |
+          if [ -f android/keystore.properties ]; then
+            mv android/app/build/outputs/apk/release/app-release.apk "SafeVault-Android-${RELEASE_TAG}.apk"
+          else
+            mv android/app/build/outputs/apk/debug/app-debug.apk "SafeVault-Android-${RELEASE_TAG}.apk"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: release-android

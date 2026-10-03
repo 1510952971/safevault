@@ -127,7 +127,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 ## 五、程序版本更新与维护
 
 SafeVault 现已全面内置 **GitHub Releases 自动更新检测**：
-1. 在 SafeVault 界面顶栏点击版本号（当前为 `v1.3.2`）或在防卫面板点击 **「检查版本更新」**；
+1. 在 SafeVault 界面顶栏点击版本号（当前为 `v1.3.3`）或在防卫面板点击 **「检查版本更新」**；
 2. 系统会自动比对 GitHub 最新发布的 Release 源码包、Windows 客户端与安卓 APK；点击“下载并开始更新”会启动当前平台的下载流程；
 3. **极空间 Docker 更新指引**：
    - 当 GitHub 发布新版本镜像后，进入极空间「Docker」➔「镜像库」拉取最新镜像；

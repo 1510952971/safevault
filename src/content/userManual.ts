@@ -369,7 +369,8 @@ export const USER_MANUAL_SECTIONS: ManualSection[] = [
           'Android 与 iOS 使用和 Web、桌面端相同的加密与同步核心，登录同一 NAS 账号后自动获取数据。',
           '手机端采用底部主导航、中央新增按钮、单列凭据卡，以及抽屉式分类和安全中心。',
           '局域网默认连接 http://192.168.5.134:18088；外网必须使用稳定 HTTPS 地址。',
-          'Android 点击更新后会下载 APK 并打开系统安装器；首次可能需要在系统设置中允许 SafeVault 安装未知应用，然后确认安装。',
+          'Android 点击更新后会下载 APK 并打开系统安装器；首次可能需要在系统设置中允许 SafeVault 安装未知应用，然后确认安装。新增凭据、分类和安全抽屉均支持系统左划返回，不会直接退出。',
+          'Android 更新必须使用同一 Release 签名证书。若出现“安装失败(-7)”或“签名不同”，说明旧包和新包由不同密钥签名；先导出/同步数据，再卸载旧包并安装固定签名版本，后续即可覆盖更新。',
           'iOS 不能由 App 自行替换正在运行的 App；更新请通过 TestFlight/App Store，GitHub 中的 iOS ZIP 仅供 Xcode 模拟器使用。',
           '每次发布前执行 npm run mobile:sync，程序会自动同步网页资源和 Android、iOS 版本号。'
         ]
