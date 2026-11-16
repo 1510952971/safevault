@@ -1,0 +1,26 @@
+services:
+  safevault:
+    image: node:20-alpine
+    container_name: safevault
+    restart: unless-stopped
+    working_dir: /app
+    command: ["node", "server/index.js"]
+    expose:
+      - "8088"
+    mem_limit: 1g
+    environment:
+      TZ: Asia/Shanghai
+      NODE_ENV: production
+      PORT: "8088"
+      DATA_DIR: /app/data
+      BACKUP_DIR: /app/backup
+      STATIC_DIR: /app/dist
+      REQUIRE_HTTPS: "true"
+      TRUST_PROXY: "true"
+      CORS_ORIGIN: "https://safevault.985251.xyz,https://nas.985251.xyz"
+    volumes:
+      - ./safevault-app/dist:/app/dist:ro
+      - ./safevault-app/server:/app/server:ro
+      - ./safevault-app/package.json:/app/package.json:ro
+      - ./safevault-data:/app/data
+      - ./safevault-backup:/app/backup

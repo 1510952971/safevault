@@ -31,10 +31,12 @@ if errorlevel 1 (
 echo.
 echo [2/3] 正在准备极空间部署目录 (deploy\zspace-package)...
 set "TARGET_DIR=%~dp0deploy\zspace-package"
-if exist "%TARGET_DIR%" rmdir /s /q "%TARGET_DIR%"
-mkdir "%TARGET_DIR%"
-mkdir "%TARGET_DIR%\data"
-mkdir "%TARGET_DIR%\server"
+if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
+if not exist "%TARGET_DIR%\data" mkdir "%TARGET_DIR%\data"
+if not exist "%TARGET_DIR%\safevault-backup" mkdir "%TARGET_DIR%\safevault-backup"
+if not exist "%TARGET_DIR%\server" mkdir "%TARGET_DIR%\server"
+
+rem 仅更新程序文件，绝不删除 data、safevault-backup、Caddy 数据或现有配置。
 
 echo.
 echo [3/3] 正在复制编译网页产物与纯原生服务端脚本...

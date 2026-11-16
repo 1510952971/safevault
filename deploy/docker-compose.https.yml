@@ -5,7 +5,7 @@ services:
     environment:
       REQUIRE_HTTPS: "true"
       TRUST_PROXY: "true"
-      CORS_ORIGIN: "https://safevault.eyeme.online"
+      CORS_ORIGIN: "https://nas.985251.xyz,https://safevault.985251.xyz"
 
   # 独立 HTTPS 反向代理，适配已经在极空间 Docker 中运行的 safevault 容器。
   # 启动前请确保 NAS 主机的 80/443 端口未被其他容器占用。

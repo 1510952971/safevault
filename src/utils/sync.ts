@@ -44,11 +44,13 @@ export interface NasSyncConfig {
 }
 
 /** 稳定的极空间远程入口；客户端首次打开同步设置时优先使用该地址。 */
-export const DEFAULT_NAS_REMOTE_SERVER_URL = 'https://safevault.eyeme.online';
+export const DEFAULT_NAS_REMOTE_SERVER_URL = 'https://nas.985251.xyz';
 /** 极空间同一局域网内的直连入口，仅在设备回到家庭网络时使用。 */
 export const DEFAULT_NAS_LOCAL_SERVER_URL = 'http://192.168.5.134:18088';
-/** AWS 双端同步服务的稳定 HTTPS 入口。 */
-export const DEFAULT_AWS_SERVER_URL = 'https://aws-safevault.eyeme.online';
+/** 甲骨文云双端同步服务的稳定 HTTPS 入口。 */
+export const DEFAULT_OCI_SERVER_URL = 'https://safevault.985251.xyz';
+/** 保留旧导出名和内部 provider ID，兼容已有客户端的本地配置。 */
+export const DEFAULT_AWS_SERVER_URL = DEFAULT_OCI_SERVER_URL;
 /** 保留旧导出名，语义改为默认远程入口，避免旧代码兼容性断裂。 */
 export const DEFAULT_NAS_SERVER_URL = DEFAULT_NAS_REMOTE_SERVER_URL;
 export const CURRENT_AUTH_KDF_ITERATIONS = 600000;
@@ -77,6 +79,60 @@ export interface NasBackupSummary {
 }
 
 const NAS_CONFIG_KEY = 'safevault_nas_sync_config';
+const LEGACY_NAS_REMOTE_SERVER_URL = 'https://safevault.eyeme.online';
+const LEGACY_AWS_SERVER_URL = 'https://aws-safevault.eyeme.online';
+
+function migrateLegacySyncUrl(rawUrl?: string): { value: string | undefined; changed: boolean } {
+  if (!rawUrl || typeof rawUrl !== 'string') return { value: rawUrl, changed: false };
+  const normalized = rawUrl.trim().replace(/\/+$/, '').toLowerCase();
+  if (normalized === LEGACY_NAS_REMOTE_SERVER_URL) {
+    return { value: DEFAULT_NAS_REMOTE_SERVER_URL, changed: true };
+  }
+  if (normalized === LEGACY_AWS_SERVER_URL) {
+    return { value: DEFAULT_OCI_SERVER_URL, changed: true };
+  }
+  return { value: rawUrl, changed: false };
+}
+
+/**
+ * 将旧 AWS/旧 Cloudflare 地址迁移到新的 Oracle/Cloudflare 地址。
+ * 只修改 URL，不触碰用户名、令牌、盐值、版本号或密文内容。
+ */
+function migrateLegacySyncConfig(config: NasSyncConfig): NasSyncConfig {
+  let changed = false;
+  const next: NasSyncConfig = { ...config };
+
+  for (const key of ['serverUrl', 'localUrl', 'remoteUrl'] as const) {
+    const migrated = migrateLegacySyncUrl(next[key]);
+    if (migrated.changed) {
+      next[key] = migrated.value;
+      changed = true;
+    }
+  }
+
+  if (config.endpoints) {
+    const endpoints: Partial<Record<SyncProviderId, SyncEndpointConfig>> = { ...config.endpoints };
+    for (const provider of ['nas', 'aws'] as SyncProviderId[]) {
+      const endpoint = endpoints[provider];
+      if (!endpoint) continue;
+      const migrated = migrateLegacySyncUrl(endpoint.serverUrl);
+      if (migrated.changed) {
+        endpoints[provider] = { ...endpoint, serverUrl: migrated.value as string };
+        changed = true;
+      }
+    }
+    next.endpoints = endpoints;
+  }
+
+  if (changed) {
+    try {
+      localStorage.setItem(NAS_CONFIG_KEY, JSON.stringify(next));
+    } catch (e) {
+      console.warn('迁移旧同步地址失败，将继续使用内存中的新地址:', e);
+    }
+  }
+  return next;
+}
 
 /**
  * 从本地持久化读取 NAS 同步配置
@@ -85,8 +141,9 @@ export function loadNasSyncConfig(): NasSyncConfig | null {
   try {
     const raw = localStorage.getItem(NAS_CONFIG_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as NasSyncConfig;
-    if (!parsed || typeof parsed !== 'object' || !parsed.serverUrl && !parsed.endpoints) return null;
+    const decoded = JSON.parse(raw) as NasSyncConfig | null;
+    if (!decoded || typeof decoded !== 'object' || !decoded.serverUrl && !decoded.endpoints) return null;
+    const parsed = migrateLegacySyncConfig(decoded);
 
     const activeProvider: SyncProviderId = parsed.activeProvider || parsed.provider || 'nas';
     const endpoints = { ...(parsed.endpoints || {}) };

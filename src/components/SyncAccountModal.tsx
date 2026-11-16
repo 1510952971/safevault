@@ -98,7 +98,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
   const [isSavingUrl, setIsSavingUrl] = useState(false);
 
   const selectedEndpoint = syncConfig ? getSyncEndpoint(syncConfig, selectedProvider) : null;
-  const providerLabel = selectedProvider === 'aws' ? 'AWS 同步服务器' : '极空间 NAS + Cloudflare Tunnel';
+  const providerLabel = selectedProvider === 'aws' ? '甲骨文云同步服务器' : '极空间 NAS + Cloudflare Tunnel';
 
   const selectProvider = (provider: SyncProviderId) => {
     setSelectedProvider(provider);
@@ -158,7 +158,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
         persistEndpointResult(config, execution.endpoint, { remoteVersion: result.currentVersion });
       }
     } else if (execution.failedOver) {
-      addToast('info', `当前同步方案不可用，已切换到${execution.endpoint.provider === 'aws' ? ' AWS' : '极空间 NAS'}备用方案`);
+      addToast('info', `当前同步方案不可用，已切换到${execution.endpoint.provider === 'aws' ? '甲骨文云' : '极空间 NAS'}备用方案`);
     }
   };
 
@@ -310,7 +310,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
       );
       const pullRes = pullExecution.result;
       if (pullExecution.failedOver) {
-        addToast('info', `主方案暂时不可用，已从${pullExecution.endpoint.provider === 'aws' ? ' AWS' : '极空间 NAS'}备用方案读取数据。`);
+        addToast('info', `主方案暂时不可用，已从${pullExecution.endpoint.provider === 'aws' ? '甲骨文云' : '极空间 NAS'}备用方案读取数据。`);
       }
       if (!pullRes.success) {
         addToast('error', pullRes.message || '无法从任一同步方案读取数据，已停止智能同步');
@@ -477,7 +477,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
         if (replication.conflictedProviders.length > 0) {
           addToast('info', '另一同步端存在未确认的独立版本，已停止覆盖；当前主方案数据仍已安全保存。');
         }
-        addToast('success', `全库凭据 (${encryptedItems.length}项) 已安全保存到${pushExecution.endpoint.provider === 'aws' ? ' AWS' : '极空间 NAS'}${pushExecution.failedOver ? '备用方案' : ''}！`);
+        addToast('success', `全库凭据 (${encryptedItems.length}项) 已安全保存到${pushExecution.endpoint.provider === 'aws' ? '甲骨文云' : '极空间 NAS'}${pushExecution.failedOver ? '备用方案' : ''}！`);
       } else {
         addToast('error', res.message || '推送失败');
       }
@@ -518,7 +518,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
         setCurrentRemoteVersion(res.version ?? null);
         void refreshBackups(updatedCfg);
 
-        addToast('success', `已从${pullExecution.endpoint.provider === 'aws' ? ' AWS' : '极空间 NAS'}${pullExecution.failedOver ? '备用方案' : ''}安全拉取并还原 ${decryptedItems.length} 条加密凭据！`);
+        addToast('success', `已从${pullExecution.endpoint.provider === 'aws' ? '甲骨文云' : '极空间 NAS'}${pullExecution.failedOver ? '备用方案' : ''}安全拉取并还原 ${decryptedItems.length} 条加密凭据！`);
       } else {
         addToast('info', res.message || '极空间云端暂无可拉取的金库数据');
       }
@@ -594,7 +594,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
     const endpoint = getSyncEndpoint(syncConfig, provider);
     if (!endpoint) {
       selectProvider(provider);
-      addToast('info', `请先配置${provider === 'aws' ? ' AWS' : '极空间 NAS'}同步端`);
+      addToast('info', `请先配置${provider === 'aws' ? '甲骨文云' : '极空间 NAS'}同步端`);
       return;
     }
     if ((syncConfig.activeProvider || syncConfig.provider || 'nas') === provider) {
@@ -628,7 +628,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
       setCurrentRemoteVersion(remote.version ?? null);
       onSyncStatusChanged?.(true, updatedCfg.lastSyncTime);
       await refreshBackups(updatedCfg);
-      addToast('success', `已安全切换到${provider === 'aws' ? ' AWS' : '极空间 NAS + Cloudflare Tunnel'}主同步方案。`);
+      addToast('success', `已安全切换到${provider === 'aws' ? '甲骨文云' : '极空间 NAS + Cloudflare Tunnel'}主同步方案。`);
     } catch (err: unknown) {
       addToast('error', err instanceof Error ? err.message : '切换同步方案失败，原方案未改变');
     } finally {
@@ -717,7 +717,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[11px] font-bold text-slate-100">
-                        {provider === 'nas' ? '极空间 + Cloudflare' : 'AWS 同步服务器'}
+                        {provider === 'nas' ? '极空间 + Cloudflare' : '甲骨文云同步服务器'}
                       </span>
                       <span className={`text-[9px] ${active ? 'text-emerald-400' : endpoint ? 'text-sky-400' : 'text-slate-500'}`}>
                         {active ? '主方案' : endpoint ? '已配置' : '未配置'}
@@ -767,9 +767,9 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                   type="button"
                   onClick={() => setServerUrl(DEFAULT_AWS_SERVER_URL)}
                   className="text-left px-2.5 py-2 rounded border border-violet-800/70 bg-violet-950/20 hover:bg-violet-950/40 transition-colors sm:col-span-2"
-                  title="AWS 双端同步服务默认 HTTPS 地址"
+                  title="甲骨文云双端同步服务默认 HTTPS 地址"
                 >
-                  <span className="block text-violet-300 font-bold">AWS 默认同步地址</span>
+                  <span className="block text-violet-300 font-bold">甲骨文云默认同步地址</span>
                   <span className="block mt-1 text-slate-400 truncate">{DEFAULT_AWS_SERVER_URL}</span>
                 </button>
               )}
@@ -816,7 +816,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                 <div className="flex items-center justify-between pb-2 border-b border-slate-700/60">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="font-bold text-slate-100 text-sm">{selectedProvider === 'aws' ? 'AWS 同步端已联机' : '极空间 NAS 已联机'}</span>
+                    <span className="font-bold text-slate-100 text-sm">{selectedProvider === 'aws' ? '甲骨文云同步端已联机' : '极空间 NAS 已联机'}</span>
                   </div>
                   <span className="font-mono text-[11px] text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
                     CONNECTED
@@ -829,7 +829,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                     <div className="col-span-2 bg-slate-900/90 p-3 rounded-lg border border-emerald-500/50 space-y-2">
                       <div className="flex items-center justify-between">
                         <label className="text-[11px] font-bold text-slate-200">
-                          更换{selectedProvider === 'aws' ? ' AWS' : '极空间 NAS'}网址 (保持当前登录，无需重新配置)
+                          更换{selectedProvider === 'aws' ? '甲骨文云' : '极空间 NAS'}网址 (保持当前登录，无需重新配置)
                         </label>
                         {typeof window !== 'undefined' && window.location.protocol.startsWith('http') && (
                           <button
@@ -870,7 +870,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                   ) : (
                     <div className="col-span-2 bg-slate-900/60 p-2.5 rounded border border-slate-700/50">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-slate-400 font-mono text-[10px]">{selectedProvider === 'aws' ? 'AWS 网址' : 'NAS / Tunnel 网址'} // SERVER:</span>
+                        <span className="text-slate-400 font-mono text-[10px]">{selectedProvider === 'aws' ? '甲骨文云网址' : 'NAS / Tunnel 网址'} // SERVER:</span>
                         <button
                           type="button"
                           onClick={() => {
@@ -1020,7 +1020,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
               <div className="flex items-center justify-between pt-2.5 border-t border-slate-800">
                 <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
                   <Smartphone className="w-3.5 h-3.5" />
-                  <span>手机端、桌面端和 NAS/AWS 使用相同账号即可互通</span>
+                  <span>手机端、桌面端和 NAS/甲骨文云使用相同账号即可互通</span>
                 </div>
                 <button
                   type="button"
@@ -1094,7 +1094,7 @@ export const SyncAccountModal: React.FC<SyncAccountModalProps> = ({
                   required
                   value={serverUrl}
                   onChange={(e) => setServerUrl(e.target.value)}
-                  placeholder={selectedProvider === 'aws' ? '例如: https://aws-safevault.example.com' : '例如: http://192.168.5.134:18088 或 Cloudflare Tunnel 地址'}
+                  placeholder={selectedProvider === 'aws' ? '例如: https://safevault.985251.xyz' : '例如: http://192.168.5.134:18088 或 Cloudflare Tunnel 地址'}
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 font-mono text-xs focus:border-emerald-500 focus:outline-none"
                 />
                 {healthStatus && (
