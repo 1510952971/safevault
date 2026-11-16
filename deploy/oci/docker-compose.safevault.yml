@@ -3,11 +3,23 @@ services:
     image: node:20-alpine
     container_name: safevault
     restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
     working_dir: /app
     command: ["node", "server/index.js"]
     expose:
       - "8088"
     mem_limit: 1g
+    cpus: "0.75"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    tmpfs:
+      - /tmp
     environment:
       TZ: Asia/Shanghai
       NODE_ENV: production
@@ -24,3 +36,9 @@ services:
       - ./safevault-app/package.json:/app/package.json:ro
       - ./safevault-data:/app/data
       - ./safevault-backup:/app/backup
+    healthcheck:
+      test: ["CMD-SHELL", "wget --header='X-Forwarded-Proto: https' -q -O /dev/null http://127.0.0.1:8088/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

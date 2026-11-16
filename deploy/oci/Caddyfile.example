@@ -1,0 +1,30 @@
+985251.xyz, www.985251.xyz {
+    encode gzip
+    reverse_proxy personal-site:80
+}
+
+sync.985251.xyz {
+    encode gzip
+    request_body {
+        max_size 10MB
+    }
+    reverse_proxy pocketbase:8080 {
+        transport http {
+            read_timeout 360s
+        }
+    }
+}
+
+# SafeVault Oracle Cloud sync service.
+# It shares the existing Caddy ingress but has its own container and data volumes.
+safevault.985251.xyz {
+    encode gzip
+    request_body {
+        max_size 10MB
+    }
+    reverse_proxy safevault:8088 {
+        transport http {
+            read_timeout 360s
+        }
+    }
+}

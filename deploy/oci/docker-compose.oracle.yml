@@ -1,0 +1,115 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: "1.00"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy_data:/data
+      - ./caddy_config:/config
+    depends_on:
+      personal-site:
+        condition: service_started
+      pocketbase:
+        condition: service_healthy
+      safevault:
+        condition: service_healthy
+
+  personal-site:
+    image: nginx:alpine
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: "1.00"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - ./site_html:/usr/share/nginx/html:ro
+
+  pocketbase:
+    build:
+      context: ./pocketbase
+      args:
+        PB_VERSION: "0.42.2"
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    mem_limit: 512m
+    cpus: "0.75"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    expose:
+      - "8080"
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - ./pocketbase_data:/pb/pb_data
+
+  safevault:
+    image: node:20-alpine
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    mem_limit: 1g
+    cpus: "0.75"
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    working_dir: /app
+    command: ["node", "server/index.js"]
+    expose:
+      - "8088"
+    tmpfs:
+      - /tmp
+    environment:
+      TZ: Asia/Shanghai
+      NODE_ENV: production
+      PORT: "8088"
+      DATA_DIR: /app/data
+      BACKUP_DIR: /app/backup
+      STATIC_DIR: /app/dist
+      REQUIRE_HTTPS: "true"
+      TRUST_PROXY: "true"
+      CORS_ORIGIN: "https://safevault.985251.xyz,https://nas.985251.xyz"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --header='X-Forwarded-Proto: https' -q -O /dev/null http://127.0.0.1:8088/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - ./safevault-app/dist:/app/dist:ro
+      - ./safevault-app/server:/app/server:ro
+      - ./safevault-app/package.json:/app/package.json:ro
+      - ./safevault-data:/app/data
+      - ./safevault-backup:/app/backup
