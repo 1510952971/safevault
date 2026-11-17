@@ -19,7 +19,7 @@ export const USER_MANUAL_SECTIONS: ManualSection[] = [
     blocks: [
       {
         paragraphs: [
-          'SafeVault 是支持极空间 NAS 与 AWS 双同步端的多端密码管理器。用户可在同步设置中选择主方案，另一端作为备用；客户端只保存加密缓存，主密码不会上传到任何同步服务器。',
+          'SafeVault 是支持极空间 NAS 与甲骨文云双同步端的多端密码管理器。用户可在同步设置中选择主方案，另一端作为备用；客户端只保存加密缓存，主密码不会上传到任何同步服务器。',
           '正常使用时不需要手动执行同步。登录会从当前主方案拉取密码库；本地新增、编辑、删除后会自动复制到另一端；网络错误或 5xx 才会触发安全备用切换。'
         ]
       },
@@ -515,13 +515,15 @@ export const USER_MANUAL_SECTIONS: ManualSection[] = [
         warning: '域名只是连接入口，不是账号或加密密钥。更换域名不会改变密码库；不要因为域名失效而重置账号或上传空库。'
       },
       {
-        heading: 'AWS 服务器到期或迁移到新服务器',
+        heading: 'AWS 服务器到期并迁移到甲骨文云',
         steps: [
-          '在旧服务器仍在线时，停止写入高风险操作，先在软件中执行一次主方案同步，再导出 .safevault.json；同时保留旧服务器的 data、backup 和 EBS Snapshot。',
-          '在新服务器安装同版本 SafeVault、Docker/Compose 和 HTTPS 反向代理，创建持久化目录；不要把新目录挂载到旧目录之外后直接注册新账号。',
-          '停止旧容器后，完整复制旧服务器的 data 与 backup 到新服务器对应目录，保留文件权限、备份目录结构和 .env 中的协议配置；不要只复制 dist，也不要只复制当前数据库而遗漏 backup。',
-          '先用临时 HTTPS 域名访问新服务器/api/version，确认用户数、版本、备份状态和条目数正确；再把原域名的 DNS A 记录改到新服务器。',
-          '等待 DNS 生效后，在客户端重新测试同步、拉取和写入；验证无误后才释放旧服务器、旧磁盘或旧快照。'
+          '在旧 AWS 服务器仍在线时停止高风险写入，先执行一次主方案同步并导出 .safevault.json；保留旧 data、backup 和 EBS Snapshot。',
+          '在甲骨文云部署公共 Caddy 与独立 SafeVault 容器；SafeVault 使用独立的应用目录和数据目录，不能与其他软件共用 data 或 backup。',
+          '将旧服务器的 data 与 backup 完整复制到甲骨文云 SafeVault 对应目录，保留权限、备份目录结构和环境配置；不要只复制 dist，也不要遗漏 backup。',
+          '将 safevault.985251.xyz 的 DNS/反向代理指向甲骨文云 SafeVault，将 nas.985251.xyz 保持指向极空间 Cloudflare Tunnel，两个域名不能指向同一容器。',
+          '分别访问两个地址的 /api/version，确认版本、userCount、条目数和灾备状态正确；客户端只更换服务器网址，不要重新注册原账号。',
+          '在同步设置中配置极空间和甲骨文云两个端点，使用同一同步账号；先确认两端数据一致，再启用主备互相备份。',
+          '确认登录、拉取、新增、编辑、删除和故障切换均正常后，才释放 AWS 服务器、旧域名、旧磁盘或旧快照。'
         ],
         warning: '迁移期间必须保留旧服务器和至少一份离线加密备份，直到新服务器完成登录、拉取、写入和恢复测试。发生异常时只切回旧域名，不要在两台服务器上同时独立修改。'
       },
@@ -541,6 +543,53 @@ export const USER_MANUAL_SECTIONS: ManualSection[] = [
           'API 版本、用户数、密文条目数、前后端版本和灾备状态正确。',
           '至少一台电脑和一部手机完成登录、拉取、新增、编辑、删除和重新拉取测试。',
           '旧服务器、旧 NAS 数据目录、EBS 快照和 .safevault.json 在确认新端稳定前全部保留。'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'release-history-v135',
+    title: '17 v1.3.5 最近更新与下次迁移记录',
+    summary: '记录本次 NAS 修复、AWS 到甲骨文云迁移和双端互备配置，后续按此流程操作。',
+    blocks: [
+      {
+        heading: '本次已完成的基础设施变更',
+        bullets: [
+          '生产云端从即将到期的 AWS 迁移到甲骨文云；甲骨文云 SafeVault 地址为 https://safevault.985251.xyz。',
+          'Cloudflare 已切换到新账号和新域名；nas.985251.xyz 只指向极空间 Tunnel，safevault.985251.xyz 只指向甲骨文云 SafeVault。',
+          '甲骨文云使用公共 Caddy 统一处理 HTTPS 和子域名分发，SafeVault 使用独立容器、独立 data 和 backup 目录；后续其他软件必须使用各自的子域名、容器和数据目录。',
+          '极空间原 SafeVault 容器的数据目录和灾备目录保持不变，NAS 更新只替换 dist、server、package.json 后重启原容器。'
+        ]
+      },
+      {
+        heading: 'NAS 更新固定流程',
+        steps: [
+          '从 GitHub main 拉取最新代码，确认 package.json 版本号，并运行 npm test 与 npm run build。',
+          '运行“生成极空间部署包.bat”，或使用 GitHub Release 里的 SafeVault-NAS 版本包。',
+          '停止原 SafeVault 容器；只把 dist、server、package.json 覆盖到原 Docker/safevault 目录。',
+          '绝不删除或覆盖原 data、safevault-backup、Caddyfile 和其他软件目录；不要创建没有原数据挂载的新容器。',
+          '启动并重启原容器，访问 https://nas.985251.xyz/api/version，确认 serverVersion、frontendVersion、versionsMatch、userCount 和 disasterBackupReady。',
+          '若页面版本旧，先强制刷新站点/PWA 缓存；若 userCount 变成 0，立即停止，不要重新注册账号。'
+        ]
+      },
+      {
+        heading: 'NAS 与甲骨文云互为备份',
+        steps: [
+          '在同步设置中分别配置 https://nas.985251.xyz 和 https://safevault.985251.xyz；两端是独立服务器账号记录，但使用同一用户名和主密码。',
+          '首次绑定空端点时，使用“恢复性上传”复制现有本地库；不要对空服务器点击“重新下载”。',
+          '将极空间设为主方案、甲骨文云设为备用方案；正常写入会自动复制加密数据，网络故障时按版本和密文指纹安全切换。',
+          '任一端已有独立数据时，先导出 .safevault.json，再使用“兼容旧数据合并”；发生版本冲突时不要强行覆盖。',
+          '手机在 5G/外网时使用 HTTPS 域名，不要使用 192.168.x.x 内网地址；内网地址只在与 NAS 同一 Wi-Fi 时使用。'
+        ]
+      },
+      {
+        heading: 'GitHub 发布固定流程',
+        steps: [
+          '在 safevault 仓库执行 git checkout main 和 git pull --ff-only origin main。',
+          '修改代码、手册或部署模板后运行 npm test、npm run build，并检查 git status 不含 data、backup、密钥和本地缓存。',
+          '提交并推送到 origin/main；需要发布安装包时，再创建对应的 vX.Y.Z 标签，由 GitHub Actions 生成 Android、iOS 模拟器、NAS 和 Windows 资产。',
+          'Android Release 必须使用同一长期保存的签名密钥；不要把 keystore、密码或 android/keystore.properties 提交到 GitHub。',
+          '发布后以 GitHub main 的 package.json、Release 资产和各服务器 /api/version 三处结果为准，不以旧快捷方式或旧 NAS 页面版本为准。'
         ]
       }
     ]

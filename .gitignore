@@ -5,6 +5,7 @@ dist/
 deploy/zspace-package/
 deploy/zspace-v*/
 safevault-zspace-v*.zip
+deploy/SafeVault-NAS-*.zip
 *.tar
 
 # Android release signing material must stay outside Git.
